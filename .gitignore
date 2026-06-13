@@ -1,0 +1,7 @@
+node_modules/
+odoo-login.txt
+.auth_secret
+users.json
+production_bom.json
+production_log.json
+.env
