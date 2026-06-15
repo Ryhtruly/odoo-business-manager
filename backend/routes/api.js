@@ -209,18 +209,26 @@ router.get('/config', checkRole([]), (req, res) => {
 });
 
 router.post('/config', checkRole([]), (req, res) => {
-  const newConfig = req.body;
-  const currentConfig = loadConfig();
-  
-  // If password is masked, keep original password
-  if (newConfig.password === '********') {
-    newConfig.password = currentConfig.password;
-  }
-  
-  if (saveConfig(newConfig)) {
-    res.json({ success: true, message: 'Configuration saved successfully' });
-  } else {
-    res.status(500).json({ success: false, message: 'Failed to save configuration' });
+  try {
+    const newConfig = req.body;
+    console.log('Received config save request:', { ...newConfig, password: newConfig.password ? '***' : '' });
+    const currentConfig = loadConfig();
+    
+    // If password is masked, keep original password
+    if (newConfig.password === '********') {
+      newConfig.password = currentConfig.password;
+    }
+    
+    if (saveConfig(newConfig)) {
+      console.log('Configuration saved successfully to sync_config.json');
+      res.json({ success: true, message: 'Configuration saved successfully' });
+    } else {
+      console.error('Failed to save configuration via saveConfig');
+      res.status(500).json({ success: false, message: 'Failed to save configuration' });
+    }
+  } catch (err) {
+    console.error('Error in POST /config handler:', err);
+    res.status(500).json({ success: false, message: 'Server error: ' + err.message });
   }
 });
 
@@ -368,6 +376,49 @@ router.delete('/odoo/products/:id', checkRole(['ke_toan_kho']), async (req, res)
     res.status(500).json({ success: false, error: e.message });
   }
 });
+
+router.post('/odoo/products/:id/adjust-stock', checkRole(['ke_toan_kho']), async (req, res) => {
+  try {
+    const config = loadConfig();
+    const cookie = await odooAuth(config);
+    const id = Number(req.params.id);
+    const { newQty } = req.body;
+    
+    if (newQty === undefined || isNaN(Number(newQty))) {
+      return res.status(400).json({ success: false, error: 'Số lượng điều chỉnh không hợp lệ' });
+    }
+
+    const variantId = await resolveProductVariant(config, id, cookie);
+    const locs = await odooCall(config, 'stock.location', 'search_read', [], {
+      domain: [['usage', '=', 'internal']],
+      fields: ['id', 'name'],
+      limit: 1
+    }, cookie);
+    const locationId = locs[0]?.id;
+    if (!locationId) throw new Error('Không tìm thấy địa điểm kho Odoo');
+
+    const quants = await odooCall(config, 'stock.quant', 'search_read', [], {
+      domain: [['product_id', '=', variantId], ['location_id', '=', locationId]],
+      fields: ['id', 'quantity'],
+      limit: 1
+    }, cookie);
+
+    if (quants.length) {
+      await odooCall(config, 'stock.quant', 'write', [[quants[0].id], { quantity: Number(newQty) }], {}, cookie);
+    } else {
+      await odooCall(config, 'stock.quant', 'create', [{
+        product_id: variantId,
+        location_id: locationId,
+        quantity: Number(newQty)
+      }], {}, cookie);
+    }
+
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 router.get('/odoo/partners/:id/purchased-products', checkRole(['ke_toan_kho', 'kinh_doanh']), async (req, res) => {
   try {
     const config = loadConfig();

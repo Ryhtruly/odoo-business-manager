@@ -42,9 +42,14 @@ async function odooAuth(config) {
     method: 'call',
     params: { db: config.db, login: config.login, password: config.password }
   };
-  const { cookie } = await odooRpc(config, '/web/session/authenticate', payload);
-  if (!cookie) throw new Error('Failed to obtain session cookie from Odoo');
-  return cookie;
+  try {
+    const { cookie } = await odooRpc(config, '/web/session/authenticate', payload);
+    if (!cookie) throw new Error('Failed to obtain session cookie from Odoo');
+    return cookie;
+  } catch (error) {
+    console.error('Odoo authentication failed for database:', config.db, 'URL:', config.odooUrl, 'login:', config.login, 'error:', error.message);
+    throw error;
+  }
 }
 
 async function resolveProductVariant(config, templateId, cookie) {

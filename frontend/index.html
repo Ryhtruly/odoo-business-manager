@@ -7,7 +7,7 @@
   <meta name="description" content="Dashboard quản lý đồng bộ dữ liệu hai chiều giữa Odoo ERP và Google Sheets.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
@@ -54,6 +54,14 @@
             <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
           </svg>
           <span>Quản Lý Khách Hàng</span>
+        </button>
+        <button class="nav-item" id="btnTabVendors" data-tab="vendors">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+            <line x1="12" y1="22.08" x2="12" y2="12"/>
+          </svg>
+          <span>Quản Lý Nhà Cung Cấp</span>
         </button>
         <button class="nav-item" id="btnTabStock" data-tab="stock">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -415,6 +423,15 @@
               <h2>Danh Sách Sản Phẩm (Odoo)</h2>
               <div class="table-actions">
                 <input type="text" class="form-input search-input" id="searchProducts" placeholder="Tìm tên hoặc mã sản phẩm...">
+                <select id="filterProductType" class="form-input" style="padding: 8px;">
+                  <option value="all">Tất cả phân loại</option>
+                  <option value="product">Lưu kho</option>
+                  <option value="service">Dịch vụ</option>
+                  <option value="combo">Combo</option>
+                  <option value="raw_material">Nguyên liệu</option>
+                  <option value="manufactured">Tự làm</option>
+                  <option value="trading">Thương mại</option>
+                </select>
                 <select id="sortProducts" class="form-input" style="padding: 8px;">
                   <option value="name_asc">Tên (A-Z)</option>
                   <option value="name_desc">Tên (Z-A)</option>
@@ -427,15 +444,6 @@
                 <button class="btn btn-secondary" id="btnRefreshProducts">Tải Lại</button>
               </div>
             </div>
-            <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
-              <select id="sortProducts" class="form-input" style="padding: 4px 8px; width: 150px;">
-                <option value="none">Sắp xếp mặc định</option>
-                <option value="price_asc">Giá bán ↑</option>
-                <option value="price_desc">Giá bán ↓</option>
-                <option value="stock_asc">Tồn kho ↑</option>
-                <option value="stock_desc">Tồn kho ↓</option>
-              </select>
-            </div>
             <div class="responsive-table-wrapper">
               <table id="tblProducts">
                 <thead>
@@ -443,11 +451,11 @@
                     <th>Mã sản phẩm</th>
                     <th>Tên sản phẩm</th>
                     <th>Loại</th>
-                    <th>Giá bán</th>
-                    <th>Giá vốn</th>
-                    <th>Tồn kho</th>
+                    <th style="text-align: right;">Giá bán</th>
+                    <th style="text-align: right;">Giá vốn</th>
+                    <th style="text-align: right;">Tồn kho</th>
                     <th>Cập nhật cuối</th>
-                    <th>Hành động</th>
+                    <th style="width: 50px; text-align: right; padding-right: 15px;"></th>
                   </tr>
                 </thead>
                 <tbody id="tbodyProducts">
@@ -489,6 +497,36 @@
             </div>
           </div>
         </section>
+
+        <!-- ================= VENDORS TAB ================= -->
+        <section class="tab-panel" id="panelVendors">
+          <div class="glass-panel datatable-container">
+            <div class="table-header">
+              <h2>Danh Sách Nhà Cung Cấp (Vendor Management)</h2>
+              <div class="table-actions">
+                <input type="text" class="form-input search-input" id="searchVendors" placeholder="Tìm kiếm nhà cung cấp...">
+                <button class="btn btn-primary" id="btnCreateVendorFromTab">Thêm Nhà Cung Cấp</button>
+                <button class="btn btn-secondary" id="btnRefreshVendors">Tải Lại</button>
+              </div>
+            </div>
+            <div class="responsive-table-wrapper">
+              <table id="tblVendors">
+                <thead>
+                  <tr>
+                    <th>Tên nhà cung cấp</th>
+                    <th>Địa chỉ</th>
+                    <th>Số điện thoại</th>
+                  </tr>
+                </thead>
+                <tbody id="tbodyVendors">
+                  <tr>
+                    <td colspan="3" class="text-center">Đang tải dữ liệu...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
         
         <!-- ================= STOCK TAB ================= -->
         <section class="tab-panel" id="panelStock">
@@ -506,15 +544,13 @@
                   <tr>
                     <th>Mã sản phẩm</th>
                     <th>Tên sản phẩm</th>
-                    <th>Kho lưu trữ</th>
-                    <th>Phân loại kho</th>
                     <th>Số lượng</th>
                     <th>Ngày ghi nhận</th>
                   </tr>
                 </thead>
                 <tbody id="tbodyStock">
                   <tr>
-                    <td colspan="6" class="text-center">Đang tải dữ liệu...</td>
+                    <td colspan="4" class="text-center">Đang tải dữ liệu...</td>
                   </tr>
                 </tbody>
               </table>
@@ -527,8 +563,15 @@
           <div class="glass-panel datatable-container">
             <div class="table-header">
               <h2>Danh Sách Hóa Đơn Khách Hàng (Customer Invoices)</h2>
-              <div class="table-actions">
-                <input type="text" class="form-input search-input" id="searchInvoices" placeholder="Tìm số hóa đơn hoặc khách hàng...">
+              <div class="table-actions" style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: flex-end; flex: 1;">
+                <input type="text" class="form-input search-input" id="searchInvoices" placeholder="Tìm số hóa đơn hoặc khách hàng..." style="width: 220px;">
+                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end;">
+                  <span class="text-muted" style="font-size: 0.85rem;">Từ ngày:</span>
+                  <input type="date" id="filterInvoiceFromDate" class="form-input" style="padding: 6px; width: 125px;">
+                  <span class="text-muted" style="font-size: 0.85rem;">Đến ngày:</span>
+                  <input type="date" id="filterInvoiceToDate" class="form-input" style="padding: 6px; width: 125px;">
+                  <button class="btn btn-secondary btn-sm" id="btnClearInvoiceDateFilters" style="padding: 6px 10px; font-size: 0.8rem; height: 32px; display: inline-flex; align-items: center;">Xóa lọc</button>
+                </div>
                 <button class="btn btn-secondary" id="btnRefreshInvoices">Tải Lại</button>
               </div>
             </div>
@@ -539,13 +582,11 @@
                     <th>Số hóa đơn</th>
                     <th>Khách hàng</th>
                     <th>Tổng số tiền</th>
-                    <th>Còn lại</th>
                     <th>Trạng thái t.toán</th>
-                    <th>Nội dung thanh toán</th>
                     <th>Số HĐ GTGT</th>
                     <th>Trạng thái</th>
                     <th>Ngày hóa đơn</th>
-                    <th>Hành động</th>
+                    <th style="width: 50px; text-align: right; padding-right: 15px;"></th>
                   </tr>
                 </thead>
                 <tbody id="tbodyInvoices">
@@ -586,7 +627,7 @@
                 <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
                   <div class="form-group" style="margin-bottom: 0;">
                     <label for="poVendor">Nhà Cung Cấp:</label>
-                    <div style="display: flex; gap: 6px; align-items: center;">
+                    <div style="display: flex; align-items: center; gap: 8px; width: 100%;">
                       <select id="poVendor" class="form-input" required style="padding: 8px; flex: 1;">
                         <option value="">-- Chọn Nhà Cung Cấp --</option>
                       </select>
@@ -601,22 +642,22 @@
 
                 <div class="glass-panel" style="padding: 12px; margin-bottom: 12px; border: 1px dashed rgba(0, 0, 0, 0.1); background: rgba(0, 0, 0, 0.02); border-radius: 8px;">
                   <h4 style="margin-top: 0; margin-bottom: 8px; font-size: 0.9rem; font-weight: 600;">Thêm Dòng Sản Phẩm Đặt Mua</h4>
-                  <div class="form-grid" style="grid-template-columns: 2fr 1fr auto; gap: 12px; margin-bottom: 0; align-items: flex-end;">
-                    <div class="form-group" style="margin-bottom: 0;">
+                  <div style="display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 0; width: 100%;">
+                    <div class="form-group" style="margin-bottom: 0; flex: 3; min-width: 200px;">
                       <label for="poProduct">Sản Phẩm Nguyên Liệu:</label>
-                      <div style="display: flex; gap: 6px; align-items: center;">
+                      <div style="display: flex; gap: 8px; align-items: center;">
                         <select id="poProduct" class="form-input" style="padding: 8px; flex: 1;">
                           <option value="">-- Chọn Nguyên Liệu --</option>
                         </select>
                       </div>
                     </div>
-                    <div class="form-group" style="margin-bottom: 0;">
+                    <div class="form-group" style="margin-bottom: 0; flex: 1; max-width: 120px; min-width: 80px;">
                       <label for="poQty">Số Lượng:</label>
-                      <input type="number" id="poQty" class="form-input" min="1" value="100">
+                      <input type="number" id="poQty" class="form-input" min="1" value="100" style="padding: 8px;">
                     </div>
                     <input type="hidden" id="poPrice" value="0">
-                    <div>
-                      <button type="button" class="btn btn-secondary" id="btnAddPOLine" style="padding: 8px 16px;">Thêm Dòng</button>
+                    <div style="margin-bottom: 0; flex: 0 0 auto;">
+                      <button type="button" class="btn btn-secondary" id="btnAddPOLine" style="padding: 8px 16px; height: 38px;">Thêm Dòng</button>
                     </div>
                   </div>
                 </div>
@@ -627,54 +668,27 @@
                     <thead>
                       <tr style="border-bottom: 1px solid rgba(0, 0, 0, 0.1);">
                         <th style="text-align: left; padding: 6px;">Sản phẩm</th>
-                        <th style="text-align: right; padding: 6px; width: 110px;">Số lượng</th>
-                        <th style="text-align: right; padding: 6px;">Đơn giá vốn</th>
-                        <th style="text-align: right; padding: 6px;">Thành tiền</th>
+                        <th style="text-align: right !important; padding: 6px; width: 110px;">Số lượng</th>
+                        <th style="text-align: right !important; padding: 6px;">Đơn giá vốn</th>
+                        <th style="text-align: right !important; padding: 6px;">Thành tiền</th>
                         <th style="text-align: center; padding: 6px; width: 60px;">Xóa</th>
                       </tr>
                     </thead>
                     <tbody id="tbodyPOLines">
                       <tr>
-                        <td colspan="5" class="text-center text-muted" style="padding: 12px;">Chưa có dòng nào được thêm. Vui lòng chọn sản phẩm ở trên rồi nhấn "Thêm Dòng".</td>
+                        <td colspan="5" class="text-center text-muted" style="padding: 12px; text-align: center;">Chưa có dòng nào được thêm. Vui lòng chọn sản phẩm ở trên rồi nhấn "Thêm Dòng".</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
 
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px;">
-                  <div style="font-size: 0.9rem; font-weight: 500;">
-                    Tổng cộng đơn mua: <strong id="lblPOTotal" style="color: var(--accent-primary); font-weight: 700; font-size: 1.1rem;">0 đ</strong>
+                <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 12px; margin-top: 16px; width: 100%;">
+                  <div style="font-size: 18px; font-weight: bold; color: var(--accent-danger);">
+                    Tổng cộng đơn mua: <span id="lblPOTotal" style="font-size: 22px; font-weight: 800; color: var(--accent-danger);">0 đ</span>
                   </div>
-                  <button type="submit" class="btn btn-primary" style="margin: 0;">Tạo Đơn Mua Hàng & Phiếu Nhập Kho</button>
+                  <button type="submit" class="btn btn-primary" style="margin: 0; padding: 10px 24px; font-size: 1rem;">Tạo Đơn Mua Hàng & Phiếu Nhập Kho</button>
                 </div>
               </form>
-            </div>
-
-            <div class="glass-panel datatable-container">
-              <div class="table-header">
-                <h2>Danh Sách Nhà Cung Cấp (Vendors)</h2>
-                <div class="table-actions">
-                  <input type="text" class="form-input search-input" id="searchVendors" placeholder="Tìm tên hoặc số điện thoại...">
-                  <button class="btn btn-primary" id="btnCreateVendorFromTab">Thêm Nhà Cung Cấp</button>
-                  <button class="btn btn-secondary" id="btnRefreshVendors">Tải Lại</button>
-                </div>
-              </div>
-              <div class="responsive-table-wrapper">
-                <table id="tblVendors">
-                  <thead>
-                    <tr>
-                      <th>Tên nhà cung cấp</th>
-                      <th>Địa chỉ</th>
-                      <th>Số điện thoại</th>
-                    </tr>
-                  </thead>
-                  <tbody id="tbodyVendors">
-                    <tr>
-                      <td colspan="3" class="text-center">Đang tải dữ liệu...</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
             </div>
           </div>
 
@@ -689,16 +703,17 @@
                 <table id="tblPOs">
                   <thead>
                     <tr>
-                      <th>Mã PO</th>
-                      <th>Nhà cung cấp</th>
-                      <th>Tổng tiền</th>
-                      <th>Trạng thái</th>
-                      <th>Ngày mua</th>
+                      <th style="text-align: left !important; padding-left: 16px;">Mã PO</th>
+                      <th style="text-align: left !important; padding-left: 16px;">Nhà cung cấp</th>
+                      <th style="text-align: right !important;">Tổng tiền</th>
+                      <th style="text-align: center !important;">Trạng thái</th>
+                      <th style="text-align: center !important;">Ngày mua</th>
+                      <th style="text-align: right !important; padding-right: 15px;">Hành động</th>
                     </tr>
                   </thead>
                   <tbody id="tbodyPOs">
                     <tr>
-                      <td colspan="5" class="text-center">Đang tải đơn mua hàng...</td>
+                      <td colspan="6" class="text-center">Đang tải đơn mua hàng...</td>
                     </tr>
                   </tbody>
                 </table>
@@ -721,7 +736,7 @@
                       <th>Tài liệu gốc</th>
                       <th>Đối tác</th>
                       <th>Trạng thái nhận kho</th>
-                      <th>Hành động</th>
+                      <th style="text-align: right !important; padding-right: 15px;">Hành động</th>
                     </tr>
                   </thead>
                   <tbody id="tbodyReceipts">
@@ -1137,7 +1152,7 @@
         <label for="payStatus">Trạng Thái Thanh Toán:</label>
         <select id="payStatus" class="form-input" style="padding: 8px;" required>
           <option value="not_paid">Chưa thanh toán</option>
-          <option value="partial">Đã đặt cọc (Thanh toán một phần)</option>
+          <option value="partial">Đang thanh toán (Thanh toán một phần)</option>
           <option value="paid">Đã thanh toán</option>
         </select>
       </div>

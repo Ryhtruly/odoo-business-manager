@@ -79,6 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Search Inputs
   const searchProducts = document.getElementById('searchProducts');
+  const filterProductType = document.getElementById('filterProductType');
   const searchStock = document.getElementById('searchStock');
   const searchInvoices = document.getElementById('searchInvoices');
   
@@ -324,8 +325,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   const roleTabMap = {
-    admin: ['dashboard', 'products', 'customers', 'stock', 'orders', 'production', 'sales', 'invoices', 'terminal', 'settings'],
-    ke_toan_kho: ['dashboard', 'products', 'stock', 'orders'],
+    admin: ['dashboard', 'products', 'customers', 'vendors', 'stock', 'orders', 'production', 'sales', 'invoices', 'terminal', 'settings'],
+    ke_toan_kho: ['dashboard', 'products', 'stock', 'orders', 'vendors'],
     san_xuat: ['dashboard', 'production', 'stock'],
     kinh_doanh: ['dashboard', 'sales', 'customers', 'stock'],
     ke_toan_ban_hang: ['dashboard', 'invoices', 'customers']
@@ -679,6 +680,7 @@ document.addEventListener('DOMContentLoaded', () => {
     sales: { title: 'Bộ Phận Kinh Doanh: Bán Hàng', desc: 'Tạo đơn hàng bán (Sales Orders) cho khách hàng' },
     invoices: { title: 'Kế Toán Bán Hàng: Hóa Đơn & Thanh Toán', desc: 'Quản lý hóa đơn xuất bán, ghi sổ và thanh toán' },
     customers: { title: 'Quản Lý Khách Hàng', desc: 'Danh sách và thông tin liên hệ của khách hàng đồng bộ từ Odoo' },
+    vendors: { title: 'Quản Lý Nhà Cung Cấp', desc: 'Danh sách và thông tin liên hệ của các đối tác nhà cung cấp đồng bộ từ Odoo' },
     terminal: { title: 'Màn Hình Logs Hệ Thống', desc: 'Xem lại toàn bộ lịch sử console logs đã chạy' },
     settings: { title: 'Cài Đặt Kết Nối', desc: 'Thiết lập thông tin đăng nhập Odoo và khóa bảo mật Google' }
   };
@@ -705,6 +707,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (tabName === 'stock') fetchStockData();
       if (tabName === 'invoices') fetchInvoicesData();
       if (tabName === 'customers') fetchCustomersData();
+      if (tabName === 'vendors') fetchVendorsData();
       if (tabName === 'orders') {
         fetchPOsData();
         fetchReceiptsData();
@@ -826,8 +829,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Render Invoices Chart
         const invByStatus = {
           'Đã thanh toán': invoices.filter(i => i.payment_state === 'paid').length,
-          'Chưa thanh toán': invoices.filter(i => i.payment_state === 'not_paid').length,
-          'Đã đặt cọc': invoices.filter(i => i.payment_state === 'partial').length,
+          'Chưa thanh toán': invoices.filter(i => !i.payment_state || i.payment_state === 'not_paid').length,
+          'Đang thanh toán': invoices.filter(i => i.payment_state === 'partial' || i.payment_state === 'in_payment').length,
         };
         const invChartData = Object.entries(invByStatus)
           .map(([label, value]) => ({ label, value }))
@@ -844,12 +847,12 @@ document.addEventListener('DOMContentLoaded', () => {
         valTotalPOs.textContent = pos.length;
         
         const pending = receipts.filter(r => r.state === 'assigned').length;
-        valPendingReceipts.textContent = `Nhận kho chờ duyệt: ${pending}`;
+        valPendingReceipts.textContent = `Chờ nhập kho: ${pending}`;
 
         // Render Purchase Flow Chart
         const purchaseFlow = {
           'Đơn mua hàng': pos.length,
-          'Chờ nhận kho': pending,
+          'Đang chờ nhập': pending,
           'Đã nhận kho': receipts.filter(r => r.state === 'done').length,
         };
         const poChartData = Object.entries(purchaseFlow)
@@ -921,50 +924,104 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     tbodyProducts.innerHTML = products.map(p => {
-      let typeLabel = p.type;
-      if (p.type === 'raw_material') typeLabel = 'Nguyên vật liệu';
-      else if (p.type === 'manufactured') typeLabel = 'Thành phẩm xưởng tự làm';
-      else if (p.type === 'trading') typeLabel = 'Hàng mua đi bán lại';
-      else if (p.type === 'product' || p.type === 'consu') typeLabel = 'Hàng hóa lưu kho';
-      else if (p.type === 'service') typeLabel = 'Dịch vụ';
-      else if (p.type === 'combo') typeLabel = 'Combo';
-      else typeLabel = p.type || 'N/A';
+      let typeHtml = '';
+      if (p.type === 'raw_material') typeHtml = '<span class="badge badge-raw">Nguyên liệu</span>';
+      else if (p.type === 'manufactured') typeHtml = '<span class="badge badge-manufactured">Tự làm</span>';
+      else if (p.type === 'trading') typeHtml = '<span class="badge badge-storable">Thương mại</span>';
+      else if (p.type === 'product' || p.type === 'consu') typeHtml = '<span class="badge badge-storable">Lưu kho</span>';
+      else if (p.type === 'service') typeHtml = '<span class="badge badge-service">Dịch vụ</span>';
+      else if (p.type === 'combo') typeHtml = '<span class="badge badge-combo">Combo</span>';
+      else typeHtml = `<span class="badge badge-secondary">${p.type || 'Hàng hóa'}</span>`;
 
-      const qtyLabel = (p.type === 'product' || p.type === 'consu' || p.type === 'raw_material' || p.type === 'manufactured' || p.type === 'trading') ? (p.qty_available ?? 0) : '-';
+      const isStockable = (p.type === 'product' || p.type === 'consu' || p.type === 'raw_material' || p.type === 'manufactured' || p.type === 'trading');
+      const qty = isStockable ? (p.qty_available ?? 0) : null;
+      let stockHtml = '';
+      if (qty === null) {
+        stockHtml = '<span class="text-muted">-</span>';
+      } else if (qty <= 0) {
+        stockHtml = `<span class="badge" style="background-color: rgba(239, 68, 68, 0.15); color: var(--accent-danger); border: 1px solid rgba(239, 68, 68, 0.3); font-weight: 700;">Hết hàng (0)</span>`;
+      } else if (qty <= 5) {
+        stockHtml = `<span class="badge" style="background-color: rgba(239, 68, 68, 0.15); color: var(--accent-danger); border: 1px solid rgba(239, 68, 68, 0.3); font-weight: 700;">Dưới tối thiểu (${qty})</span>`;
+      } else {
+        stockHtml = `<strong class="text-success">${qty}</strong>`;
+      }
+
       const formattedPrice = p.list_price ? Number(p.list_price).toLocaleString() + ' đ' : '0 đ';
       const formattedCost = p.standard_price ? Number(p.standard_price).toLocaleString() + ' đ' : '0 đ';
-      const updateDate = p.write_date ? new Date(p.write_date).toLocaleString() : 'N/A';
+      const updateDate = p.write_date ? new Date(p.write_date).toLocaleDateString('vi-VN') : 'N/A';
+
+      const role = getCurrentRole();
+      const isAllowed = (role === 'admin' || role === 'ke_toan_kho');
+      
+      let dropdownHtml = '';
+      if (isAllowed) {
+        dropdownHtml = `
+          <div class="action-dropdown">
+            <button class="action-dropdown-btn" title="Thao tác">&#8226;&#8226;&#8226;</button>
+            <div class="action-dropdown-menu">
+              <button class="action-dropdown-item btn-edit-prod" data-id="${p.id}">✏️ Sửa sản phẩm</button>
+              <button class="action-dropdown-item btn-adjust-stock" data-id="${p.id}" data-qty="${qty ?? 0}">📦 Điều chỉnh kho</button>
+              <button class="action-dropdown-item danger btn-delete-prod" data-id="${p.id}">🚫 Ngừng kinh doanh</button>
+            </div>
+          </div>
+        `;
+      }
 
       return `
         <tr>
           <td><strong>${p.default_code || '-'}</strong></td>
           <td>${p.name}</td>
-          <td><span class="badge badge-type">${typeLabel}</span></td>
-          <td>${formattedPrice}</td>
-          <td>${formattedCost}</td>
-          <td><strong class="${qtyLabel > 0 ? 'text-success' : ''}">${qtyLabel}</strong></td>
+          <td>${typeHtml}</td>
+          <td style="text-align: right;">${formattedPrice}</td>
+          <td style="text-align: right;">${formattedCost}</td>
+          <td style="text-align: right;">${stockHtml}</td>
           <td class="text-muted">${updateDate}</td>
-          <td>
-            ${(getCurrentRole() === 'ke_toan_kho') ? `
-              <button class="btn btn-sm btn-secondary btn-edit-prod" data-id="${p.id}" style="padding: 4px 8px; font-size: 0.75rem; margin-right: 4px;">Sửa</button>
-              <button class="btn btn-sm btn-accent btn-delete-prod" data-id="${p.id}" style="padding: 4px 8px; font-size: 0.75rem; color: var(--accent-danger); background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.2);">Xóa</button>
-            ` : '-'}
-          </td>
+          <td style="text-align: right; padding-right: 15px;">${dropdownHtml}</td>
         </tr>
       `;
     }).join('');
 
     // Attach Event Listeners to individual buttons
+    document.querySelectorAll('#tbodyProducts .action-dropdown-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const menu = btn.nextElementSibling;
+        const wasShown = menu.classList.contains('show');
+        
+        // Close all dropdowns
+        document.querySelectorAll('.action-dropdown-menu').forEach(m => m.classList.remove('show'));
+        
+        if (!wasShown) {
+          menu.classList.add('show');
+        }
+      });
+    });
+
     document.querySelectorAll('.btn-edit-prod').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.action-dropdown-menu').forEach(m => m.classList.remove('show'));
         const attrId = btn.getAttribute('data-id');
         const prodId = attrId.startsWith('temp_') ? attrId : Number(attrId);
         openEditProductModal(prodId);
       });
     });
 
+    document.querySelectorAll('.btn-adjust-stock').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.action-dropdown-menu').forEach(m => m.classList.remove('show'));
+        const attrId = btn.getAttribute('data-id');
+        const prodId = attrId.startsWith('temp_') ? attrId : Number(attrId);
+        const qty = Number(btn.getAttribute('data-qty') || 0);
+        adjustProductStock(prodId, qty);
+      });
+    });
+
     document.querySelectorAll('.btn-delete-prod').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.action-dropdown-menu').forEach(m => m.classList.remove('show'));
         const attrId = btn.getAttribute('data-id');
         const prodId = attrId.startsWith('temp_') ? attrId : Number(attrId);
         confirmDeleteProduct(prodId);
@@ -974,7 +1031,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- Fetch and Display Stock Data ---
   async function fetchStockData() {
-    tbodyStock.innerHTML = '<tr><td colspan="7" class="text-center">Đang tải dữ liệu tồn kho...</td></tr>';
+    tbodyStock.innerHTML = '<tr><td colspan="4" class="text-center">Đang tải dữ liệu tồn kho...</td></tr>';
     try {
       const response = await fetch('/api/odoo/stock');
       if (!response.ok) throw new Error('Failed to fetch stock');
@@ -982,24 +1039,22 @@ document.addEventListener('DOMContentLoaded', () => {
       cache.stock = data;
       renderStock(data);
     } catch (e) {
-      tbodyStock.innerHTML = `<tr><td colspan="7" class="text-center text-danger">Lỗi: ${e.message}</td></tr>`;
+      tbodyStock.innerHTML = `<tr><td colspan="4" class="text-center text-danger">Lỗi: ${e.message}</td></tr>`;
     }
   }
 
   function renderStock(stock) {
     if (!stock.length) {
-      tbodyStock.innerHTML = '<tr><td colspan="6" class="text-center">Không tìm thấy thông tin tồn kho nào.</td></tr>';
+      tbodyStock.innerHTML = '<tr><td colspan="4" class="text-center">Không tìm thấy thông tin tồn kho nào.</td></tr>';
       return;
     }
     
     tbodyStock.innerHTML = stock.map(s => {
-      const writeDateStr = s.write_date ? new Date(s.write_date).toLocaleString() : 'N/A';
+      const writeDateStr = s.write_date ? new Date(s.write_date).toLocaleDateString('vi-VN') : 'N/A';
       return `
         <tr>
           <td><strong>${s.product_code || '-'}</strong></td>
           <td>${s.product_name || 'N/A'}</td>
-          <td>${s.location || 'N/A'}</td>
-          <td><span class="badge text-muted">${s.usage || 'N/A'}</span></td>
           <td><strong class="text-success">${s.quantity}</strong></td>
           <td class="text-muted">${writeDateStr}</td>
         </tr>
@@ -1149,39 +1204,50 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- Fetch and Display Invoices Data ---
   async function fetchInvoicesData() {
-    tbodyInvoices.innerHTML = '<tr><td colspan="9" class="text-center">Đang tải dữ liệu hóa đơn...</td></tr>';
+    tbodyInvoices.innerHTML = '<tr><td colspan="8" class="text-center">Đang tải dữ liệu hóa đơn...</td></tr>';
     try {
       const response = await fetch('/api/odoo/invoices');
       if (!response.ok) throw new Error('Failed to fetch invoices');
       const data = await response.json();
       cache.invoices = data;
-      renderInvoices(data);
+      applyInvoiceFilters();
     } catch (e) {
-      tbodyInvoices.innerHTML = `<tr><td colspan="10" class="text-center text-danger">Lỗi: ${e.message}</td></tr>`;
+      tbodyInvoices.innerHTML = `<tr><td colspan="8" class="text-center text-danger">Lỗi: ${e.message}</td></tr>`;
     }
   }
 
   function renderInvoices(invoices) {
     if (!invoices.length) {
-      tbodyInvoices.innerHTML = '<tr><td colspan="10" class="text-center">Không tìm thấy hóa đơn nào.</td></tr>';
+      tbodyInvoices.innerHTML = '<tr><td colspan="8" class="text-center">Không tìm thấy hóa đơn nào.</td></tr>';
       return;
     }
     
     tbodyInvoices.innerHTML = invoices.map(i => {
       const total = i.amount_total ? Number(i.amount_total).toLocaleString() + ' đ' : '0 đ';
-      const residual = i.amount_residual ? Number(i.amount_residual).toLocaleString() + ' đ' : '0 đ';
+      let totalHtml = `<strong>${total}</strong>`;
+      if (i.amount_residual > 0 && i.amount_residual < i.amount_total) {
+        totalHtml += `<div class="text-muted" style="font-size: 0.75rem; font-weight: normal; margin-top: 2px;">Còn lại: ${Number(i.amount_residual).toLocaleString()} đ</div>`;
+      }
       
       let payClass = 'text-warning';
-      let payLabel = i.payment_state || 'N/A';
-      if (i.payment_state === 'paid') {
+      let payLabel = 'Chưa thanh toán';
+      const state = i.payment_state || 'not_paid';
+      
+      if (state === 'paid') {
         payClass = 'text-success';
         payLabel = 'Đã thanh toán';
-      } else if (i.payment_state === 'not_paid') {
+      } else if (state === 'not_paid') {
         payClass = 'text-danger';
         payLabel = 'Chưa thanh toán';
-      } else if (i.payment_state === 'partial') {
+      } else if (state === 'partial' || state === 'in_payment') {
         payClass = 'text-warning';
-        payLabel = 'Đã đặt cọc';
+        payLabel = 'Đang thanh toán';
+      } else if (state === 'reversed') {
+        payClass = 'text-muted';
+        payLabel = 'Hoàn tiền';
+      } else {
+        payClass = 'text-muted';
+        payLabel = state;
       }
       
       const stateLabel = i.state === 'posted' ? 'Đã vào sổ' : i.state === 'draft' ? 'Nháp' : i.state || 'N/A';
@@ -1191,43 +1257,56 @@ document.addEventListener('DOMContentLoaded', () => {
       const role = getCurrentRole();
       const isAllowed = (role === 'admin' || role === 'ke_toan_ban_hang');
       
-      let actionBtn = '';
+      let dropdownHtml = '';
       if (isAllowed) {
+        let updateAction = '';
         if (i.state === 'draft') {
-          actionBtn = `<button class="btn btn-sm btn-primary btn-post-invoice" data-id="${i.id}" style="padding: 4px 8px; font-size: 0.75rem;">Ghi Sổ</button>`;
+          updateAction = `<button class="action-dropdown-item btn-post-invoice" data-id="${i.id}">📝 Ghi sổ</button>`;
         } else if (i.state === 'posted') {
-          actionBtn = `<button class="btn btn-sm btn-accent btn-pay-invoice" data-id="${i.id}" style="padding: 4px 8px; font-size: 0.75rem;">Cập Nhật TT/GTGT</button>`;
+          updateAction = `<button class="action-dropdown-item btn-pay-invoice" data-id="${i.id}">💳 Cập nhật</button>`;
         }
+        
+        dropdownHtml = `
+          <div class="action-dropdown">
+            <button class="action-dropdown-btn" title="Thao tác">&#8226;&#8226;&#8226;</button>
+            <div class="action-dropdown-menu">
+              ${updateAction}
+              <a href="/api/odoo/invoices/${i.id}/pdf?access_token=${encodeURIComponent(getAuthToken())}" target="_blank" class="action-dropdown-item">📄 Tải PDF</a>
+              <button class="action-dropdown-item danger btn-delete-invoice" data-id="${i.id}">🗑️ Xóa</button>
+            </div>
+          </div>
+        `;
       }
-      const pdfBtn = isAllowed ? `<a href="/api/odoo/invoices/${i.id}/pdf?access_token=${encodeURIComponent(getAuthToken())}" target="_blank" class="btn btn-sm btn-secondary" style="padding: 4px 8px; font-size: 0.75rem; display: inline-flex; align-items: center; gap: 4px; text-decoration: none; margin-left: 4px;">📄 Tải PDF</a>` : '';
-      const deleteBtn = isAllowed ? `<button class="btn btn-sm btn-accent btn-delete-invoice" data-id="${i.id}" style="padding: 4px 8px; font-size: 0.75rem; color: var(--accent-danger); background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.2); margin-left: 4px;">Xóa</button>` : '';
 
       return `
         <tr>
           <td><strong>${i.invoice_number || 'Nháp'}</strong></td>
-          <td>${i.partner || 'N/A'}</td>
-          <td><strong>${total}</strong></td>
-          <td class="text-muted">${residual}</td>
+          <td>${i.partner || ''}</td>
+          <td>${totalHtml}</td>
           <td><span class="${payClass}">${payLabel}</span></td>
-          <td style="font-size: 0.85rem; color: var(--text-secondary); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${i.payment_ref || ''}">${i.payment_ref || '-'}</td>
-          <td style="font-size: 0.85rem; font-weight: 600;">${i.ref || '-'}</td>
+          <td style="font-size: 0.85rem; font-weight: 600;">${i.ref || ''}</td>
           <td><span class="badge ${i.state === 'posted' ? 'text-success' : 'text-warning'}">${stateLabel}</span></td>
           <td>${invDate}</td>
-          <td><div style="display: flex; gap: 4px; align-items: center;">${actionBtn}${pdfBtn}${deleteBtn}</div></td>
+          <td style="text-align: right; padding-right: 15px;">${dropdownHtml}</td>
         </tr>
       `;
     }).join('');
 
     // Attach event listeners for invoices actions
     document.querySelectorAll('.btn-post-invoice').forEach(btn => {
-      btn.addEventListener('click', async () => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
         const id = Number(btn.getAttribute('data-id'));
         await postInvoice(id);
       });
     });
 
     document.querySelectorAll('.btn-pay-invoice').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        // Hide open dropdowns
+        document.querySelectorAll('.action-dropdown-menu').forEach(m => m.classList.remove('show'));
+
         const id = Number(btn.getAttribute('data-id'));
         const inv = cache.invoices.find(invoice => invoice.id === id);
         if (!inv) return;
@@ -1252,16 +1331,33 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.querySelectorAll('.btn-delete-invoice').forEach(btn => {
-      btn.addEventListener('click', async () => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
         const id = Number(btn.getAttribute('data-id'));
         await deleteInvoice(id);
+      });
+    });
+
+    // Toggle dropdowns
+    document.querySelectorAll('.action-dropdown-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const menu = btn.nextElementSibling;
+        const wasShown = menu.classList.contains('show');
+        
+        // Close all dropdowns
+        document.querySelectorAll('.action-dropdown-menu').forEach(m => m.classList.remove('show'));
+        
+        if (!wasShown) {
+          menu.classList.add('show');
+        }
       });
     });
   }
 
   // --- Fetch Purchase Orders Data ---
   async function fetchPOsData() {
-    tbodyPOs.innerHTML = '<tr><td colspan="5" class="text-center">Đang tải đơn mua hàng...</td></tr>';
+    tbodyPOs.innerHTML = '<tr><td colspan="6" class="text-center">Đang tải đơn mua hàng...</td></tr>';
     try {
       const response = await fetch('/api/odoo/po');
       if (!response.ok) throw new Error('Failed to fetch POs');
@@ -1270,24 +1366,40 @@ document.addEventListener('DOMContentLoaded', () => {
       if (typeof renderHistory === 'function') renderHistory();
       
       if (!data.length) {
-        tbodyPOs.innerHTML = '<tr><td colspan="5" class="text-center">Không tìm thấy đơn mua hàng nào.</td></tr>';
+        tbodyPOs.innerHTML = '<tr><td colspan="6" class="text-center">Không tìm thấy đơn mua hàng nào.</td></tr>';
         return;
       }
       
       tbodyPOs.innerHTML = data.map(o => {
         const total = o.amount_total ? Number(o.amount_total).toLocaleString() + ' đ' : '0 đ';
         const poDate = o.date_order ? new Date(o.date_order).toLocaleDateString('vi-VN') : 'N/A';
-        const stateLabel = o.state === 'purchase' ? 'Hợp đồng' : o.state === 'done' ? 'Hoàn tất' : o.state === 'draft' ? 'Yêu cầu báo giá' : o.state || 'N/A';
+        
+        let stateLabel = o.state || 'N/A';
+        let stateClass = 'badge-warning';
+        
+        if (o.state === 'draft' || o.state === 'sent' || o.state === 'to approve') {
+          stateLabel = 'Bản nháp';
+          stateClass = 'badge-secondary';
+        } else if (o.state === 'purchase') {
+          stateLabel = 'Chờ nhập hàng';
+          stateClass = 'badge-warning';
+        } else if (o.state === 'done') {
+          stateLabel = 'Đã hoàn tất';
+          stateClass = 'badge-success';
+        } else if (o.state === 'cancel') {
+          stateLabel = 'Đã hủy';
+          stateClass = 'badge-danger';
+        }
         
         return `
           <tr>
-            <td><strong>${o.po_number || '-'}</strong></td>
-            <td>${o.vendor || 'N/A'}</td>
-            <td><strong>${total}</strong></td>
-            <td><span class="text-success">${stateLabel}</span></td>
-            <td>
-              <span class="text-muted" style="display:inline-block; min-width:80px;">${poDate}</span>
-              <button class="btn btn-sm btn-secondary btn-detail-po" data-id="${o.id}" style="padding: 2px 6px; font-size: 0.75rem; margin-left: 4px;">Chi tiết</button>
+            <td style="text-align: left; padding-left: 16px;"><strong>${o.po_number || '-'}</strong></td>
+            <td style="text-align: left; padding-left: 16px;">${o.vendor || 'N/A'}</td>
+            <td style="text-align: right; font-weight: 600;">${total}</td>
+            <td style="text-align: center;"><span class="badge ${stateClass}">${stateLabel}</span></td>
+            <td style="text-align: center;">${poDate}</td>
+            <td style="text-align: right; padding-right: 15px; white-space: nowrap;">
+              <button class="btn btn-sm btn-secondary btn-detail-po" data-id="${o.id}" style="padding: 4px 8px; font-size: 0.75rem;">Chi tiết</button>
             </td>
           </tr>
         `;
@@ -1301,7 +1413,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       });
     } catch (e) {
-      tbodyPOs.innerHTML = `<tr><td colspan="5" class="text-center text-danger">Lỗi: ${e.message}</td></tr>`;
+      tbodyPOs.innerHTML = `<tr><td colspan="6" class="text-center text-danger">Lỗi: ${e.message}</td></tr>`;
     }
   }
 
@@ -1322,26 +1434,28 @@ document.addEventListener('DOMContentLoaded', () => {
       
       tbodyReceipts.innerHTML = data.map(r => {
         let stateLabel = r.state || 'N/A';
-        let stateClass = 'text-warning';
-        let actionBtn = '-';
-        
-        const role = getCurrentRole();
-        const isWarehouseStaff = (role === 'admin' || role === 'ke_toan_kho');
+        let stateClass = 'badge-warning';
         
         if (r.state === 'done') {
           stateLabel = 'Đã hoàn tất';
-          stateClass = 'text-success';
-        } else if (r.state === 'assigned') {
-          stateLabel = 'Chờ nhận kho';
-          stateClass = 'text-warning';
-          if (isWarehouseStaff) {
-            actionBtn = `<button class="btn btn-sm btn-primary btn-validate-receipt" data-id="${r.id}" style="padding: 4px 8px; font-size: 0.75rem;">Duyệt Nhập Kho</button>`;
-          } else {
-            actionBtn = '<span class="text-muted" style="font-size: 0.8rem;">Chờ duyệt</span>';
-          }
-        } else if (r.state === 'confirmed') {
-          stateLabel = 'Đang chờ';
-          stateClass = 'text-muted';
+          stateClass = 'badge-success';
+        } else if (r.state === 'assigned' || r.state === 'confirmed' || r.state === 'waiting') {
+          stateLabel = 'Đang chờ nhập';
+          stateClass = 'badge-warning';
+        } else if (r.state === 'draft') {
+          stateLabel = 'Nháp';
+          stateClass = 'badge-secondary';
+        } else if (r.state === 'cancel') {
+          stateLabel = 'Đã hủy';
+          stateClass = 'badge-danger';
+        }
+
+        const role = getCurrentRole();
+        const isWarehouseStaff = (role === 'admin' || role === 'ke_toan_kho');
+        
+        let actionBtn = '';
+        if (r.state === 'assigned' && isWarehouseStaff) {
+          actionBtn = `<button class="btn btn-sm btn-primary btn-validate-receipt" data-id="${r.id}" style="padding: 4px 8px; font-size: 0.75rem; margin-right: 8px;">Duyệt Nhập Kho</button>`;
         }
         
         return `
@@ -1349,10 +1463,10 @@ document.addEventListener('DOMContentLoaded', () => {
             <td><strong>${r.receipt_number || '-'}</strong></td>
             <td>${r.origin || '-'}</td>
             <td>${r.vendor || 'N/A'}</td>
-            <td><span class="${stateClass}">${stateLabel}</span></td>
-            <td style="display: flex; gap: 4px; align-items: center; justify-content: flex-end;">
+            <td><span class="badge ${stateClass}">${stateLabel}</span></td>
+            <td style="text-align: right; padding-right: 15px; white-space: nowrap;">
               ${actionBtn}
-              <button class="btn btn-sm btn-secondary btn-detail-receipt" data-id="${r.id}" style="padding: 2px 6px; font-size: 0.75rem;">Chi tiết</button>
+              <button class="btn btn-sm btn-secondary btn-detail-receipt" data-id="${r.id}" style="padding: 4px 8px; font-size: 0.75rem;">Chi tiết</button>
             </td>
           </tr>
         `;
@@ -1446,11 +1560,23 @@ document.addEventListener('DOMContentLoaded', () => {
   window.applyProductFilters = function() {
     const term = searchProducts.value.toLowerCase().trim();
     const sortVal = sortProducts ? sortProducts.value : 'name_asc';
+    const typeVal = filterProductType ? filterProductType.value : 'all';
 
-    let filtered = cache.products.filter(p => 
-      (p.name && p.name.toLowerCase().includes(term)) || 
-      (p.default_code && p.default_code.toLowerCase().includes(term))
-    );
+    let filtered = cache.products.filter(p => {
+      const matchesSearch = (p.name && p.name.toLowerCase().includes(term)) || 
+                            (p.default_code && p.default_code.toLowerCase().includes(term));
+      
+      let matchesType = true;
+      if (typeVal !== 'all') {
+        if (typeVal === 'product') {
+          matchesType = (p.type === 'product' || p.type === 'consu');
+        } else {
+          matchesType = (p.type === typeVal);
+        }
+      }
+
+      return matchesSearch && matchesType;
+    });
 
     filtered.sort((a, b) => {
       const nameA = a.name || '';
@@ -1476,6 +1602,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (searchProducts) searchProducts.addEventListener('input', window.applyProductFilters);
   if (sortProducts) sortProducts.addEventListener('change', window.applyProductFilters);
+  if (filterProductType) filterProductType.addEventListener('change', window.applyProductFilters);
 
   searchStock.addEventListener('input', (e) => {
     const term = e.target.value.toLowerCase().trim();
@@ -1487,14 +1614,62 @@ document.addEventListener('DOMContentLoaded', () => {
     renderStock(filtered);
   });
 
-  searchInvoices.addEventListener('input', (e) => {
-    const term = e.target.value.toLowerCase().trim();
-    const filtered = cache.invoices.filter(i => 
-      i.invoice_number.toLowerCase().includes(term) || 
-      i.partner.toLowerCase().includes(term)
-    );
+  function applyInvoiceFilters() {
+    if (!cache.invoices) return;
+    
+    const term = (searchInvoices ? searchInvoices.value : '').toLowerCase().trim();
+    const fromDateVal = document.getElementById('filterInvoiceFromDate')?.value || '';
+    const toDateVal = document.getElementById('filterInvoiceToDate')?.value || '';
+    
+    const filtered = cache.invoices.filter(i => {
+      // Search term match
+      const invoiceNum = (i.invoice_number || '').toLowerCase();
+      const partnerName = (i.partner || '').toLowerCase();
+      const matchesTerm = invoiceNum.includes(term) || partnerName.includes(term);
+      
+      // Date filter match
+      let matchesDate = true;
+      if (fromDateVal || toDateVal) {
+        if (i.invoice_date) {
+          const invDateObj = new Date(i.invoice_date);
+          invDateObj.setHours(0, 0, 0, 0);
+          
+          if (fromDateVal) {
+            const fromDateObj = new Date(fromDateVal);
+            fromDateObj.setHours(0, 0, 0, 0);
+            if (invDateObj < fromDateObj) matchesDate = false;
+          }
+          if (toDateVal) {
+            const toDateObj = new Date(toDateVal);
+            toDateObj.setHours(0, 0, 0, 0);
+            if (invDateObj > toDateObj) matchesDate = false;
+          }
+        } else {
+          matchesDate = false;
+        }
+      }
+      
+      return matchesTerm && matchesDate;
+    });
+    
     renderInvoices(filtered);
-  });
+  }
+
+  if (searchInvoices) searchInvoices.addEventListener('input', applyInvoiceFilters);
+  
+  const filterInvoiceFromDate = document.getElementById('filterInvoiceFromDate');
+  const filterInvoiceToDate = document.getElementById('filterInvoiceToDate');
+  const btnClearInvoiceDateFilters = document.getElementById('btnClearInvoiceDateFilters');
+
+  if (filterInvoiceFromDate) filterInvoiceFromDate.addEventListener('change', applyInvoiceFilters);
+  if (filterInvoiceToDate) filterInvoiceToDate.addEventListener('change', applyInvoiceFilters);
+  if (btnClearInvoiceDateFilters) {
+    btnClearInvoiceDateFilters.addEventListener('click', () => {
+      if (filterInvoiceFromDate) filterInvoiceFromDate.value = '';
+      if (filterInvoiceToDate) filterInvoiceToDate.value = '';
+      applyInvoiceFilters();
+    });
+  }
 
   // --- Load and Save Config Settings ---
   async function loadConfigSettings() {
@@ -1832,6 +2007,40 @@ document.addEventListener('DOMContentLoaded', () => {
     prodDescInput.value = prod.description || '';
     
     productDialog.showModal();
+  }
+
+  // 2.5 Adjust Stock
+  async function adjustProductStock(id, currentQty) {
+    if (String(id).startsWith('temp_')) {
+      showToast('Không thể điều chỉnh kho cho sản phẩm tạm thời', 'warning');
+      return;
+    }
+    const newQtyStr = prompt(`Nhập số lượng tồn kho mới cho sản phẩm (Hiện tại: ${currentQty}):`, currentQty);
+    if (newQtyStr === null) return; // User cancelled
+    const newQty = Number(newQtyStr.trim());
+    if (isNaN(newQty) || newQtyStr.trim() === '') {
+      showToast('Số lượng tồn kho không hợp lệ', 'danger');
+      return;
+    }
+    try {
+      showToast('Đang điều chỉnh tồn kho...', 'info');
+      const response = await fetch(`/api/odoo/products/${id}/adjust-stock`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ newQty })
+      });
+      const data = await response.json();
+      if (data.success) {
+        showToast('Điều chỉnh tồn kho thành công', 'success');
+        fetchProductsData(); // Reload table
+      } else {
+        showToast(`Lỗi: ${data.error}`, 'danger');
+      }
+    } catch (err) {
+      showToast(`Lỗi kết nối: ${err.message}`, 'danger');
+    }
   }
 
   // 3. Confirm & Handle Delete Product
@@ -2241,7 +2450,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!tbody || !lblTotal) return;
 
     if (currentPOLines.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted" style="padding: 12px;">Chưa có dòng nào được thêm. Vui lòng chọn sản phẩm ở trên rồi nhấn "Thêm Dòng".</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted" style="padding: 12px; text-align: center;">Chưa có dòng nào được thêm. Vui lòng chọn sản phẩm ở trên rồi nhấn "Thêm Dòng".</td></tr>';
       lblTotal.textContent = '0 đ';
       return;
     }
@@ -3625,4 +3834,13 @@ document.addEventListener('DOMContentLoaded', () => {
       tbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger">Lỗi: ${e.message}</td></tr>`;
     }
   };
+
+  // Close dropdowns when clicking outside
+  window.addEventListener('click', (e) => {
+    if (!e.target.matches('.action-dropdown-btn') && !e.target.closest('.action-dropdown-btn')) {
+      document.querySelectorAll('.action-dropdown-menu').forEach(menu => {
+        menu.classList.remove('show');
+      });
+    }
+  });
 });

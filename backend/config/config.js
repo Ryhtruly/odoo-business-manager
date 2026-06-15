@@ -27,7 +27,7 @@ function loadOdooLogin() {
     odooUrl: 'https://quanly-san-xuat.odoo.com',
     db: 'quanly-san-xuat',
     login: 'vanquyen607@gmail.com',
-    password: ''
+    password: '123456789@Quyen'
   };
 }
 
