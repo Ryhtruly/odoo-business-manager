@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="vi">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,108 +8,119 @@
   <meta name="description" content="Dashboard quản lý đồng bộ dữ liệu hai chiều giữa Odoo ERP và Google Sheets.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
 </head>
+
 <body>
   <!-- Sidebar Overlay for Mobile -->
   <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
   <!-- Container wrapper with theme selector support -->
   <div class="app-container" id="appContainer">
-    
+
     <!-- Sidebar -->
     <aside class="sidebar" id="appSidebar">
       <div class="sidebar-brand">
         <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-          <polyline points="22,6 12,13 2,6"/>
+          <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+          <polyline points="22,6 12,13 2,6" />
         </svg>
         <span>Theo dõi hoạt động sản xuất tại các xưởng</span>
       </div>
-      
+
       <nav class="sidebar-nav">
         <button class="nav-item active" id="btnTabDashboard" data-tab="dashboard">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="7" height="9" rx="1"/>
-            <rect x="14" y="3" width="7" height="5" rx="1"/>
-            <rect x="14" y="12" width="7" height="9" rx="1"/>
-            <rect x="3" y="16" width="7" height="5" rx="1"/>
+            <rect x="3" y="3" width="7" height="9" rx="1" />
+            <rect x="14" y="3" width="7" height="5" rx="1" />
+            <rect x="14" y="12" width="7" height="9" rx="1" />
+            <rect x="3" y="16" width="7" height="5" rx="1" />
           </svg>
           <span>Tổng Quan</span>
         </button>
         <button class="nav-item" id="btnTabProducts" data-tab="products">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
-            <line x1="7" y1="7" x2="7.01" y2="7"/>
+            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+            <line x1="7" y1="7" x2="7.01" y2="7" />
           </svg>
           <span>Sản Phẩm (Mã & Giá)</span>
         </button>
         <button class="nav-item" id="btnTabCustomers" data-tab="customers">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-            <circle cx="9" cy="7" r="4"/>
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
           </svg>
           <span>Quản Lý Khách Hàng</span>
         </button>
+        <button class="nav-item" id="btnTabVendors" data-tab="vendors">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path
+              d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+            <line x1="12" y1="22.08" x2="12" y2="12" />
+          </svg>
+          <span>Quản Lý Nhà Cung Cấp</span>
+        </button>
         <button class="nav-item" id="btnTabStock" data-tab="stock">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <ellipse cx="12" cy="5" rx="9" ry="3"/>
-            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
-            <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/>
+            <ellipse cx="12" cy="5" rx="9" ry="3" />
+            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+            <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
           </svg>
           <span>Tồn Kho (Theo dõi)</span>
         </button>
         <button class="nav-item" id="btnTabOrders" data-tab="orders">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="9" cy="21" r="1"/>
-            <circle cx="20" cy="21" r="1"/>
-            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+            <circle cx="9" cy="21" r="1" />
+            <circle cx="20" cy="21" r="1" />
+            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
           </svg>
           <span>Mua Hàng & Nhập Kho</span>
         </button>
         <button class="nav-item" id="btnTabProduction" data-tab="production">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M22 10v6M2 10v6M12 2v20M12 10H2M22 10H12M12 14H2M22 14H12"/>
+            <path d="M22 10v6M2 10v6M12 2v20M12 10H2M22 10H12M12 14H2M22 14H12" />
           </svg>
           <span>Ghi Nhận Sản Xuất</span>
         </button>
         <button class="nav-item" id="btnTabSales" data-tab="sales">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-            <circle cx="9" cy="7" r="4"/>
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
           </svg>
           <span>Kinh Doanh (Bán Hàng)</span>
         </button>
         <button class="nav-item" id="btnTabInvoices" data-tab="invoices">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="2" y="4" width="20" height="16" rx="2"/>
-            <line x1="12" y1="4" x2="12" y2="20"/>
-            <line x1="2" y1="12" x2="22" y2="12"/>
+            <rect x="2" y="4" width="20" height="16" rx="2" />
+            <line x1="12" y1="4" x2="12" y2="20" />
+            <line x1="2" y1="12" x2="22" y2="12" />
           </svg>
           <span>Hóa Đơn & Thanh Toán</span>
         </button>
         <button class="nav-item" id="btnTabTerminal" data-tab="terminal">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="4 17 10 11 4 5"/>
-            <line x1="12" y1="19" x2="20" y2="19"/>
+            <polyline points="4 17 10 11 4 5" />
+            <line x1="12" y1="19" x2="20" y2="19" />
           </svg>
           <span>Terminal Logs</span>
         </button>
         <button class="nav-item" id="btnTabSettings" data-tab="settings">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            <circle cx="12" cy="12" r="3" />
+            <path
+              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
           <span>Cài Đặt</span>
         </button>
       </nav>
-      
+
       <div class="sidebar-footer">
         <!-- User Profile Card -->
         <div class="sidebar-user-card" id="sidebarUserProfile" style="display: none;">
@@ -119,13 +131,13 @@
           </div>
           <button class="btn-logout" id="btnLogout" title="Đăng xuất">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-              <polyline points="16 17 21 12 16 7"/>
-              <line x1="21" y1="12" x2="9" y2="12"/>
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
             </svg>
           </button>
         </div>
-        
+
         <div class="theme-switch-wrapper">
           <span>Giao diện Tối</span>
           <label class="theme-toggle-label" for="themeCheckbox">
@@ -133,14 +145,15 @@
             <span class="theme-toggle-slider"></span>
           </label>
         </div>
-        
-        <button class="btn btn-secondary btn-sm" id="btnShowChangePassword" style="width: 100%; margin-top: 16px;">Đổi Mật Khẩu</button>
+
+        <button class="btn btn-secondary btn-sm" id="btnShowChangePassword" style="width: 100%; margin-top: 16px;">Đổi
+          Mật Khẩu</button>
       </div>
     </aside>
-    
+
     <!-- Main Content Area -->
     <main class="main-content" id="appMain">
-      
+
       <!-- Top Header -->
       <header class="app-header">
         <div class="header-left" style="display: flex; align-items: center; gap: 16px;">
@@ -152,18 +165,21 @@
             </svg>
           </button>
           <div class="mobile-brand" style="display: none; align-items: center; gap: 8px;">
-            <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 20px; height: 20px;">
-              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-              <polyline points="22,6 12,13 2,6"/>
+            <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              style="width: 20px; height: 20px;">
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+              <polyline points="22,6 12,13 2,6" />
             </svg>
-            <span style="font-weight: 700; font-size: 0.95rem; background: var(--accent-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Theo dõi SX tại các xưởng</span>
+            <span
+              style="font-weight: 700; font-size: 0.95rem; background: var(--accent-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Theo
+              dõi SX tại các xưởng</span>
           </div>
           <div>
             <h1 id="pageTitle">Tổng Quan Hệ Thống</h1>
             <p id="pageDescription" class="text-muted">Giám sát và kiểm soát dữ liệu Odoo - Google Sheets</p>
           </div>
         </div>
-        
+
         <div class="header-right">
           <!-- Connection Status Card -->
           <div class="status-indicator-container">
@@ -176,19 +192,19 @@
               <span>GSheet: Đang kiểm tra...</span>
             </div>
           </div>
-          
+
           <button class="btn btn-secondary btn-icon" id="btnRefreshStatus" title="Tải lại trạng thái">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-              <path d="M23 4v6h-6"/>
-              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+              <path d="M23 4v6h-6" />
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
             </svg>
           </button>
         </div>
       </header>
-      
+
       <!-- Content Container -->
       <div class="content-container">
-        
+
         <!-- ================= DASHBOARD TAB ================= -->
         <section class="tab-panel active" id="panelDashboard">
           <!-- Metrics Grid -->
@@ -203,7 +219,7 @@
                 <span class="text-success">↑ Cập nhật tự động</span>
               </div>
             </div>
-            
+
             <div class="metric-card glass-panel" id="metricStock">
               <div class="metric-header">
                 <span class="text-muted">Vị Trí Tồn Kho</span>
@@ -214,7 +230,7 @@
                 <span class="text-muted" id="valTotalStockQty">Tổng số lượng: --</span>
               </div>
             </div>
-            
+
             <div class="metric-card glass-panel" id="metricInvoices">
               <div class="metric-header">
                 <span class="text-muted">Tổng Hóa Đơn</span>
@@ -225,7 +241,7 @@
                 <span class="text-warning" id="valResidualInvoices">Chưa thanh toán: --</span>
               </div>
             </div>
-            
+
             <div class="metric-card glass-panel" id="metricOrders">
               <div class="metric-header">
                 <span class="text-muted">Đơn Mua Hàng</span>
@@ -237,21 +253,24 @@
               </div>
             </div>
           </div>
-          
+
           <div class="dashboard-grid analytics-grid">
             <div class="analytics-panel glass-panel">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 8px;">
+              <div
+                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 8px;">
                 <h2 style="margin: 0;">Tồn Kho Theo Sản Phẩm</h2>
                 <div style="display: flex; gap: 8px;">
-                  <select class="form-input chart-sort" data-chart="chartTopStock" style="padding: 4px 8px; font-size: 0.85rem; min-width: 110px;">
+                  <select class="form-input chart-sort" data-chart="chartTopStock"
+                    style="padding: 4px 8px; font-size: 0.85rem; min-width: 110px;">
                     <option value="desc">↓ Lớn đến bé</option>
                     <option value="asc">↑ Bé đến lớn</option>
                     <option value="az">A-Z</option>
                   </select>
-                  <select class="form-input chart-type" data-chart="chartTopStock" style="padding: 4px 8px; font-size: 0.85rem; min-width: 90px;">
-                    <option value="bar">Bar</option>
-                    <option value="pie">Pie</option>
-                    <option value="doughnut">Doughnut</option>
+                  <select class="form-input chart-type" data-chart="chartTopStock"
+                    style="padding: 4px 8px; font-size: 0.85rem; min-width: 145px;">
+                    <option value="bar">Biểu đồ cột</option>
+                    <option value="pie">Biểu đồ tròn</option>
+                    <option value="doughnut">Biểu đồ vành khuyên</option>
                   </select>
                 </div>
               </div>
@@ -261,18 +280,21 @@
             </div>
 
             <div class="analytics-panel glass-panel">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 8px;">
+              <div
+                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 8px;">
                 <h2 style="margin: 0;">Trạng Thái Hóa Đơn</h2>
                 <div style="display: flex; gap: 8px;">
-                  <select class="form-input chart-sort" data-chart="chartInvoiceStatus" style="padding: 4px 8px; font-size: 0.85rem; min-width: 110px;">
+                  <select class="form-input chart-sort" data-chart="chartInvoiceStatus"
+                    style="padding: 4px 8px; font-size: 0.85rem; min-width: 110px;">
                     <option value="desc">↓ Lớn đến bé</option>
                     <option value="asc">↑ Bé đến lớn</option>
                     <option value="az">A-Z</option>
                   </select>
-                  <select class="form-input chart-type" data-chart="chartInvoiceStatus" style="padding: 4px 8px; font-size: 0.85rem; min-width: 90px;">
-                    <option value="bar">Bar</option>
-                    <option value="pie">Pie</option>
-                    <option value="doughnut">Doughnut</option>
+                  <select class="form-input chart-type" data-chart="chartInvoiceStatus"
+                    style="padding: 4px 8px; font-size: 0.85rem; min-width: 145px;">
+                    <option value="bar">Biểu đồ cột</option>
+                    <option value="pie">Biểu đồ tròn</option>
+                    <option value="doughnut">Biểu đồ vành khuyên</option>
                   </select>
                 </div>
               </div>
@@ -282,18 +304,21 @@
             </div>
 
             <div class="analytics-panel glass-panel">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 8px;">
+              <div
+                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 8px;">
                 <h2 style="margin: 0;">Mua Hàng & Nhập Kho</h2>
                 <div style="display: flex; gap: 8px;">
-                  <select class="form-input chart-sort" data-chart="chartPurchaseFlow" style="padding: 4px 8px; font-size: 0.85rem; min-width: 110px;">
+                  <select class="form-input chart-sort" data-chart="chartPurchaseFlow"
+                    style="padding: 4px 8px; font-size: 0.85rem; min-width: 110px;">
                     <option value="desc">↓ Lớn đến bé</option>
                     <option value="asc">↑ Bé đến lớn</option>
                     <option value="az">A-Z</option>
                   </select>
-                  <select class="form-input chart-type" data-chart="chartPurchaseFlow" style="padding: 4px 8px; font-size: 0.85rem; min-width: 90px;">
-                    <option value="bar">Bar</option>
-                    <option value="pie">Pie</option>
-                    <option value="doughnut">Doughnut</option>
+                  <select class="form-input chart-type" data-chart="chartPurchaseFlow"
+                    style="padding: 4px 8px; font-size: 0.85rem; min-width: 145px;">
+                    <option value="bar">Biểu đồ cột</option>
+                    <option value="pie">Biểu đồ tròn</option>
+                    <option value="doughnut">Biểu đồ vành khuyên</option>
                   </select>
                 </div>
               </div>
@@ -303,18 +328,21 @@
             </div>
 
             <div class="analytics-panel glass-panel">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 8px;">
+              <div
+                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 8px;">
                 <h2 style="margin: 0;">Khách Hàng Theo Doanh Số</h2>
                 <div style="display: flex; gap: 8px;">
-                  <select class="form-input chart-sort" data-chart="chartSalesCustomers" style="padding: 4px 8px; font-size: 0.85rem; min-width: 110px;">
+                  <select class="form-input chart-sort" data-chart="chartSalesCustomers"
+                    style="padding: 4px 8px; font-size: 0.85rem; min-width: 110px;">
                     <option value="desc">↓ Lớn đến bé</option>
                     <option value="asc">↑ Bé đến lớn</option>
                     <option value="az">A-Z</option>
                   </select>
-                  <select class="form-input chart-type" data-chart="chartSalesCustomers" style="padding: 4px 8px; font-size: 0.85rem; min-width: 90px;">
-                    <option value="bar">Bar</option>
-                    <option value="pie">Pie</option>
-                    <option value="doughnut">Doughnut</option>
+                  <select class="form-input chart-type" data-chart="chartSalesCustomers"
+                    style="padding: 4px 8px; font-size: 0.85rem; min-width: 145px;">
+                    <option value="bar">Biểu đồ cột</option>
+                    <option value="pie">Biểu đồ tròn</option>
+                    <option value="doughnut">Biểu đồ vành khuyên</option>
                   </select>
                 </div>
               </div>
@@ -322,20 +350,23 @@
                 <canvas id="chartSalesCustomers"></canvas>
               </div>
             </div>
-            
+
             <div class="analytics-panel glass-panel">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 8px;">
+              <div
+                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 8px;">
                 <h2 style="margin: 0;">Đơn Bán Hàng Theo Trạng Thái</h2>
                 <div style="display: flex; gap: 8px;">
-                  <select class="form-input chart-sort" data-chart="chartSalesFlow" style="padding: 4px 8px; font-size: 0.85rem; min-width: 110px;">
+                  <select class="form-input chart-sort" data-chart="chartSalesFlow"
+                    style="padding: 4px 8px; font-size: 0.85rem; min-width: 110px;">
                     <option value="desc">↓ Lớn đến bé</option>
                     <option value="asc">↑ Bé đến lớn</option>
                     <option value="az">A-Z</option>
                   </select>
-                  <select class="form-input chart-type" data-chart="chartSalesFlow" style="padding: 4px 8px; font-size: 0.85rem; min-width: 90px;">
-                    <option value="doughnut">Doughnut</option>
-                    <option value="pie">Pie</option>
-                    <option value="bar">Bar</option>
+                  <select class="form-input chart-type" data-chart="chartSalesFlow"
+                    style="padding: 4px 8px; font-size: 0.85rem; min-width: 145px;">
+                    <option value="doughnut">Biểu đồ vành khuyên</option>
+                    <option value="pie">Biểu đồ tròn</option>
+                    <option value="bar">Biểu đồ cột</option>
                   </select>
                 </div>
               </div>
@@ -344,15 +375,16 @@
               </div>
             </div>
           </div>
-          
+
           <!-- Quick Actions and Operations -->
           <div class="dashboard-grid">
-            
+
             <!-- Quick Scripts Trigger -->
             <div class="action-card glass-panel">
               <h2>Các Tác Vụ Đồng Bộ & Xử Lý Dữ Liệu</h2>
-              <p class="text-muted">Chọn một tác vụ bên dưới để chạy script và kiểm tra quá trình xử lý thời gian thực.</p>
-              
+              <p class="text-muted">Chọn một tác vụ bên dưới để chạy script và kiểm tra quá trình xử lý thời gian thực.
+              </p>
+
               <div class="actions-group">
                 <h3>Đồng bộ & Chuẩn hóa dữ liệu</h3>
                 <div class="buttons-grid">
@@ -369,7 +401,7 @@
                     <span>Xử Lý Duyệt Phiếu Nhận Kho Chờ Duyệt</span>
                   </button>
                 </div>
-                
+
                 <h3>Kiểm thử & Khởi tạo dữ liệu mẫu</h3>
                 <div class="buttons-grid">
                   <button class="btn btn-accent btn-run-script" data-script="odoo_e2e_workflow_test.js">
@@ -378,7 +410,8 @@
                   <button class="btn btn-secondary btn-run-script" data-script="odoo_create_sample_orders_test.js">
                     <span>Tạo Đơn Bán Hàng Mẫu (Sales Orders)</span>
                   </button>
-                  <button class="btn btn-secondary btn-run-script" data-script="odoo_create_sample_purchase_and_receipt_test.js">
+                  <button class="btn btn-secondary btn-run-script"
+                    data-script="odoo_create_sample_purchase_and_receipt_test.js">
                     <span>Tạo Đơn Mua Hàng & Nhận Kho Mẫu</span>
                   </button>
                   <button class="btn btn-secondary btn-run-script" data-script="odoo_create_invoice_ab.js">
@@ -390,7 +423,7 @@
                 </div>
               </div>
             </div>
-            
+
             <!-- Dynamic Mini Terminal Console -->
             <div class="terminal-card glass-panel">
               <div class="terminal-header">
@@ -401,20 +434,31 @@
                 </div>
               </div>
               <div class="terminal-body" id="terminalOutput">
-                <div class="terminal-line system">[SYSTEM] Hệ thống sẵn sàng. Vui lòng chọn một tác vụ để thực hiện.</div>
+                <div class="terminal-line system">[SYSTEM] Hệ thống sẵn sàng. Vui lòng chọn một tác vụ để thực hiện.
+                </div>
               </div>
             </div>
-            
+
           </div>
         </section>
-        
+
         <!-- ================= PRODUCTS TAB ================= -->
         <section class="tab-panel" id="panelProducts">
           <div class="glass-panel datatable-container">
             <div class="table-header">
               <h2>Danh Sách Sản Phẩm (Odoo)</h2>
               <div class="table-actions">
-                <input type="text" class="form-input search-input" id="searchProducts" placeholder="Tìm tên hoặc mã sản phẩm...">
+                <input type="text" class="form-input search-input" id="searchProducts"
+                  placeholder="Tìm tên hoặc mã sản phẩm...">
+                <select id="filterProductType" class="form-input" style="padding: 8px;">
+                  <option value="all">Tất cả phân loại</option>
+                  <option value="product">Lưu kho</option>
+                  <option value="service">Dịch vụ</option>
+                  <option value="combo">Combo</option>
+                  <option value="raw_material">Nguyên liệu</option>
+                  <option value="manufactured">Tự làm</option>
+                  <option value="trading">Thương mại</option>
+                </select>
                 <select id="sortProducts" class="form-input" style="padding: 8px;">
                   <option value="name_asc">Tên (A-Z)</option>
                   <option value="name_desc">Tên (Z-A)</option>
@@ -427,15 +471,6 @@
                 <button class="btn btn-secondary" id="btnRefreshProducts">Tải Lại</button>
               </div>
             </div>
-            <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
-              <select id="sortProducts" class="form-input" style="padding: 4px 8px; width: 150px;">
-                <option value="none">Sắp xếp mặc định</option>
-                <option value="price_asc">Giá bán ↑</option>
-                <option value="price_desc">Giá bán ↓</option>
-                <option value="stock_asc">Tồn kho ↑</option>
-                <option value="stock_desc">Tồn kho ↓</option>
-              </select>
-            </div>
             <div class="responsive-table-wrapper">
               <table id="tblProducts">
                 <thead>
@@ -443,11 +478,11 @@
                     <th>Mã sản phẩm</th>
                     <th>Tên sản phẩm</th>
                     <th>Loại</th>
-                    <th>Giá bán</th>
-                    <th>Giá vốn</th>
-                    <th>Tồn kho</th>
+                    <th style="text-align: right;">Giá bán</th>
+                    <th style="text-align: right;">Giá vốn</th>
+                    <th style="text-align: right;">Tồn kho</th>
                     <th>Cập nhật cuối</th>
-                    <th>Hành động</th>
+                    <th style="width: 50px; text-align: right; padding-right: 15px;"></th>
                   </tr>
                 </thead>
                 <tbody id="tbodyProducts">
@@ -459,14 +494,15 @@
             </div>
           </div>
         </section>
-        
+
         <!-- ================= CUSTOMERS TAB ================= -->
         <section class="tab-panel" id="panelCustomers">
           <div class="glass-panel datatable-container">
             <div class="table-header">
               <h2>Danh Sách Khách Hàng (Customer Management)</h2>
               <div class="table-actions">
-                <input type="text" class="form-input search-input" id="searchCustomers" placeholder="Tìm kiếm khách hàng...">
+                <input type="text" class="form-input search-input" id="searchCustomers"
+                  placeholder="Tìm kiếm khách hàng...">
                 <button class="btn btn-primary" id="btnCreateCustomerFromTab">Thêm Khách Hàng</button>
                 <button class="btn btn-secondary" id="btnRefreshCustomers">Tải Lại</button>
               </div>
@@ -489,14 +525,46 @@
             </div>
           </div>
         </section>
-        
+
+        <!-- ================= VENDORS TAB ================= -->
+        <section class="tab-panel" id="panelVendors">
+          <div class="glass-panel datatable-container">
+            <div class="table-header">
+              <h2>Danh Sách Nhà Cung Cấp (Vendor Management)</h2>
+              <div class="table-actions">
+                <input type="text" class="form-input search-input" id="searchVendors"
+                  placeholder="Tìm kiếm nhà cung cấp...">
+                <button class="btn btn-primary" id="btnCreateVendorFromTab">Thêm Nhà Cung Cấp</button>
+                <button class="btn btn-secondary" id="btnRefreshVendors">Tải Lại</button>
+              </div>
+            </div>
+            <div class="responsive-table-wrapper">
+              <table id="tblVendors">
+                <thead>
+                  <tr>
+                    <th>Tên nhà cung cấp</th>
+                    <th>Địa chỉ</th>
+                    <th>Số điện thoại</th>
+                  </tr>
+                </thead>
+                <tbody id="tbodyVendors">
+                  <tr>
+                    <td colspan="3" class="text-center">Đang tải dữ liệu...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
         <!-- ================= STOCK TAB ================= -->
         <section class="tab-panel" id="panelStock">
           <div class="glass-panel datatable-container">
             <div class="table-header">
               <h2>Chi Tiết Số Lượng Tồn Kho Theo Vị Trí</h2>
               <div class="table-actions">
-                <input type="text" class="form-input search-input" id="searchStock" placeholder="Tìm sản phẩm hoặc kho hàng...">
+                <input type="text" class="form-input search-input" id="searchStock"
+                  placeholder="Tìm sản phẩm hoặc kho hàng...">
                 <button class="btn btn-secondary" id="btnRefreshStock">Tải Lại</button>
               </div>
             </div>
@@ -506,29 +574,38 @@
                   <tr>
                     <th>Mã sản phẩm</th>
                     <th>Tên sản phẩm</th>
-                    <th>Kho lưu trữ</th>
-                    <th>Phân loại kho</th>
                     <th>Số lượng</th>
                     <th>Ngày ghi nhận</th>
                   </tr>
                 </thead>
                 <tbody id="tbodyStock">
                   <tr>
-                    <td colspan="6" class="text-center">Đang tải dữ liệu...</td>
+                    <td colspan="4" class="text-center">Đang tải dữ liệu...</td>
                   </tr>
                 </tbody>
               </table>
             </div>
           </div>
         </section>
-        
+
         <!-- ================= INVOICES TAB ================= -->
         <section class="tab-panel" id="panelInvoices">
           <div class="glass-panel datatable-container">
             <div class="table-header">
               <h2>Danh Sách Hóa Đơn Khách Hàng (Customer Invoices)</h2>
-              <div class="table-actions">
-                <input type="text" class="form-input search-input" id="searchInvoices" placeholder="Tìm số hóa đơn hoặc khách hàng...">
+              <div class="table-actions"
+                style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: flex-end; flex: 1;">
+                <input type="text" class="form-input search-input" id="searchInvoices"
+                  placeholder="Tìm số hóa đơn hoặc khách hàng..." style="width: 220px;">
+                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end;">
+                  <span class="text-muted" style="font-size: 0.85rem;">Từ ngày:</span>
+                  <input type="date" id="filterInvoiceFromDate" class="form-input" style="padding: 6px; width: 125px;">
+                  <span class="text-muted" style="font-size: 0.85rem;">Đến ngày:</span>
+                  <input type="date" id="filterInvoiceToDate" class="form-input" style="padding: 6px; width: 125px;">
+                  <button class="btn btn-secondary btn-sm" id="btnClearInvoiceDateFilters"
+                    style="padding: 6px 10px; font-size: 0.8rem; height: 32px; display: inline-flex; align-items: center;">Xóa
+                    lọc</button>
+                </div>
                 <button class="btn btn-secondary" id="btnRefreshInvoices">Tải Lại</button>
               </div>
             </div>
@@ -539,13 +616,11 @@
                     <th>Số hóa đơn</th>
                     <th>Khách hàng</th>
                     <th>Tổng số tiền</th>
-                    <th>Còn lại</th>
                     <th>Trạng thái t.toán</th>
-                    <th>Nội dung thanh toán</th>
                     <th>Số HĐ GTGT</th>
                     <th>Trạng thái</th>
                     <th>Ngày hóa đơn</th>
-                    <th>Hành động</th>
+                    <th style="width: 50px; text-align: right; padding-right: 15px;"></th>
                   </tr>
                 </thead>
                 <tbody id="tbodyInvoices">
@@ -561,17 +636,22 @@
         <!-- ================= PURCHASE & INVENTORY TAB ================= -->
         <section class="tab-panel" id="panelOrders">
           <!-- Sub-tabs navigation bar -->
-          <div class="sub-tabs-container" style="display: flex; gap: 12px; margin-bottom: 24px; border-bottom: 1px solid var(--panel-border); padding-bottom: 12px;">
-            <button class="sub-tab active" data-subtab="poForm" style="background: none; border: none; padding: 8px 16px; font-weight: 600; cursor: pointer; color: var(--accent-primary); border-bottom: 2px solid var(--accent-primary); transition: all 0.3s;">
+          <div class="sub-tabs-container"
+            style="display: flex; gap: 12px; margin-bottom: 24px; border-bottom: 1px solid var(--panel-border); padding-bottom: 12px;">
+            <button class="sub-tab active" data-subtab="poForm"
+              style="background: none; border: none; padding: 8px 16px; font-weight: 600; cursor: pointer; color: var(--accent-primary); border-bottom: 2px solid var(--accent-primary); transition: all 0.3s;">
               Nhập Nguyên Liệu Đầu Vào
             </button>
-            <button class="sub-tab" data-subtab="poList" style="background: none; border: none; padding: 8px 16px; font-weight: 500; cursor: pointer; color: var(--text-muted); border-bottom: 2px solid transparent; transition: all 0.3s;">
+            <button class="sub-tab" data-subtab="poList"
+              style="background: none; border: none; padding: 8px 16px; font-weight: 500; cursor: pointer; color: var(--text-muted); border-bottom: 2px solid transparent; transition: all 0.3s;">
               Đơn Mua Hàng (POs)
             </button>
-            <button class="sub-tab" data-subtab="receiptsList" style="background: none; border: none; padding: 8px 16px; font-weight: 500; cursor: pointer; color: var(--text-muted); border-bottom: 2px solid transparent; transition: all 0.3s;">
+            <button class="sub-tab" data-subtab="receiptsList"
+              style="background: none; border: none; padding: 8px 16px; font-weight: 500; cursor: pointer; color: var(--text-muted); border-bottom: 2px solid transparent; transition: all 0.3s;">
               Phiếu Nhận Kho (Incoming Receipts)
             </button>
-            <button class="sub-tab" data-subtab="historyList" style="background: none; border: none; padding: 8px 16px; font-weight: 500; cursor: pointer; color: var(--text-muted); border-bottom: 2px solid transparent; transition: all 0.3s;">
+            <button class="sub-tab" data-subtab="historyList"
+              style="background: none; border: none; padding: 8px 16px; font-weight: 500; cursor: pointer; color: var(--text-muted); border-bottom: 2px solid transparent; transition: all 0.3s;">
               Lịch Sử (Đã Hoàn Tất)
             </button>
           </div>
@@ -580,17 +660,20 @@
           <div class="sub-tab-panel active" id="subPanelPoForm">
             <div class="glass-panel settings-container" style="margin-bottom: 24px;">
               <h2>Nhập Nguyên Liệu Đầu Vào (Tạo Đơn Mua Hàng PO)</h2>
-              <p class="text-muted">Bộ phận kế toán kho: Tạo đơn mua nguyên vật liệu từ nhà cung cấp để chuẩn bị nhập kho.</p>
-              
+              <p class="text-muted">Bộ phận kế toán kho: Tạo đơn mua nguyên vật liệu từ nhà cung cấp để chuẩn bị nhập
+                kho.</p>
+
               <form id="formPO" class="settings-form">
                 <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
                   <div class="form-group" style="margin-bottom: 0;">
                     <label for="poVendor">Nhà Cung Cấp:</label>
-                    <div style="display: flex; gap: 6px; align-items: center;">
+                    <div style="display: flex; align-items: center; gap: 8px; width: 100%;">
                       <select id="poVendor" class="form-input" required style="padding: 8px; flex: 1;">
                         <option value="">-- Chọn Nhà Cung Cấp --</option>
                       </select>
-                      <button type="button" class="btn btn-secondary btn-icon" id="btnCreateVendorPO" title="Thêm Nhà Cung Cấp Mới" style="padding: 8px; font-size: 1rem; border-radius: 6px; display: flex; align-items: center; justify-content: center; height: 38px; width: 38px; margin: 0;">➕</button>
+                      <button type="button" class="btn btn-secondary btn-icon" id="btnCreateVendorPO"
+                        title="Thêm Nhà Cung Cấp Mới"
+                        style="padding: 8px; font-size: 1rem; border-radius: 6px; display: flex; align-items: center; justify-content: center; height: 38px; width: 38px; margin: 0;">➕</button>
                     </div>
                   </div>
                   <div class="form-group" style="margin-bottom: 0;">
@@ -599,24 +682,28 @@
                   </div>
                 </div>
 
-                <div class="glass-panel" style="padding: 12px; margin-bottom: 12px; border: 1px dashed rgba(0, 0, 0, 0.1); background: rgba(0, 0, 0, 0.02); border-radius: 8px;">
-                  <h4 style="margin-top: 0; margin-bottom: 8px; font-size: 0.9rem; font-weight: 600;">Thêm Dòng Sản Phẩm Đặt Mua</h4>
-                  <div class="form-grid" style="grid-template-columns: 2fr 1fr auto; gap: 12px; margin-bottom: 0; align-items: flex-end;">
-                    <div class="form-group" style="margin-bottom: 0;">
+                <div class="glass-panel"
+                  style="padding: 12px; margin-bottom: 12px; border: 1px dashed rgba(0, 0, 0, 0.1); background: rgba(0, 0, 0, 0.02); border-radius: 8px;">
+                  <h4 style="margin-top: 0; margin-bottom: 8px; font-size: 0.9rem; font-weight: 600;">Thêm Dòng Sản Phẩm
+                    Đặt Mua</h4>
+                  <div
+                    style="display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 0; width: 100%;">
+                    <div class="form-group" style="margin-bottom: 0; flex: 3; min-width: 200px;">
                       <label for="poProduct">Sản Phẩm Nguyên Liệu:</label>
-                      <div style="display: flex; gap: 6px; align-items: center;">
+                      <div style="display: flex; gap: 8px; align-items: center;">
                         <select id="poProduct" class="form-input" style="padding: 8px; flex: 1;">
                           <option value="">-- Chọn Nguyên Liệu --</option>
                         </select>
                       </div>
                     </div>
-                    <div class="form-group" style="margin-bottom: 0;">
+                    <div class="form-group" style="margin-bottom: 0; flex: 1; max-width: 120px; min-width: 80px;">
                       <label for="poQty">Số Lượng:</label>
-                      <input type="number" id="poQty" class="form-input" min="1" value="100">
+                      <input type="number" id="poQty" class="form-input" min="1" value="100" style="padding: 8px;">
                     </div>
                     <input type="hidden" id="poPrice" value="0">
-                    <div>
-                      <button type="button" class="btn btn-secondary" id="btnAddPOLine" style="padding: 8px 16px;">Thêm Dòng</button>
+                    <div style="margin-bottom: 0; flex: 0 0 auto;">
+                      <button type="button" class="btn btn-secondary" id="btnAddPOLine"
+                        style="padding: 8px 16px; height: 38px;">Thêm Dòng</button>
                     </div>
                   </div>
                 </div>
@@ -627,54 +714,31 @@
                     <thead>
                       <tr style="border-bottom: 1px solid rgba(0, 0, 0, 0.1);">
                         <th style="text-align: left; padding: 6px;">Sản phẩm</th>
-                        <th style="text-align: right; padding: 6px; width: 110px;">Số lượng</th>
-                        <th style="text-align: right; padding: 6px;">Đơn giá vốn</th>
-                        <th style="text-align: right; padding: 6px;">Thành tiền</th>
+                        <th style="text-align: right !important; padding: 6px; width: 110px;">Số lượng</th>
+                        <th style="text-align: right !important; padding: 6px;">Đơn giá vốn</th>
+                        <th style="text-align: right !important; padding: 6px;">Thành tiền</th>
                         <th style="text-align: center; padding: 6px; width: 60px;">Xóa</th>
                       </tr>
                     </thead>
                     <tbody id="tbodyPOLines">
                       <tr>
-                        <td colspan="5" class="text-center text-muted" style="padding: 12px;">Chưa có dòng nào được thêm. Vui lòng chọn sản phẩm ở trên rồi nhấn "Thêm Dòng".</td>
+                        <td colspan="5" class="text-center text-muted" style="padding: 12px; text-align: center;">Chưa
+                          có dòng nào được thêm. Vui lòng chọn sản phẩm ở trên rồi nhấn "Thêm Dòng".</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
 
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px;">
-                  <div style="font-size: 0.9rem; font-weight: 500;">
-                    Tổng cộng đơn mua: <strong id="lblPOTotal" style="color: var(--accent-primary); font-weight: 700; font-size: 1.1rem;">0 đ</strong>
+                <div
+                  style="display: flex; flex-direction: column; align-items: flex-end; gap: 12px; margin-top: 16px; width: 100%;">
+                  <div style="font-size: 18px; font-weight: bold; color: var(--accent-danger);">
+                    Tổng cộng đơn mua: <span id="lblPOTotal"
+                      style="font-size: 22px; font-weight: 800; color: var(--accent-danger);">0 đ</span>
                   </div>
-                  <button type="submit" class="btn btn-primary" style="margin: 0;">Tạo Đơn Mua Hàng & Phiếu Nhập Kho</button>
+                  <button type="submit" class="btn btn-primary"
+                    style="margin: 0; padding: 10px 24px; font-size: 1rem;">Tạo Đơn Mua Hàng & Phiếu Nhập Kho</button>
                 </div>
               </form>
-            </div>
-
-            <div class="glass-panel datatable-container">
-              <div class="table-header">
-                <h2>Danh Sách Nhà Cung Cấp (Vendors)</h2>
-                <div class="table-actions">
-                  <input type="text" class="form-input search-input" id="searchVendors" placeholder="Tìm tên hoặc số điện thoại...">
-                  <button class="btn btn-primary" id="btnCreateVendorFromTab">Thêm Nhà Cung Cấp</button>
-                  <button class="btn btn-secondary" id="btnRefreshVendors">Tải Lại</button>
-                </div>
-              </div>
-              <div class="responsive-table-wrapper">
-                <table id="tblVendors">
-                  <thead>
-                    <tr>
-                      <th>Tên nhà cung cấp</th>
-                      <th>Địa chỉ</th>
-                      <th>Số điện thoại</th>
-                    </tr>
-                  </thead>
-                  <tbody id="tbodyVendors">
-                    <tr>
-                      <td colspan="3" class="text-center">Đang tải dữ liệu...</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
             </div>
           </div>
 
@@ -689,16 +753,17 @@
                 <table id="tblPOs">
                   <thead>
                     <tr>
-                      <th>Mã PO</th>
-                      <th>Nhà cung cấp</th>
-                      <th>Tổng tiền</th>
-                      <th>Trạng thái</th>
-                      <th>Ngày mua</th>
+                      <th style="text-align: left !important; padding-left: 16px;">Mã PO</th>
+                      <th style="text-align: left !important; padding-left: 16px;">Nhà cung cấp</th>
+                      <th style="text-align: right !important;">Tổng tiền</th>
+                      <th style="text-align: center !important;">Trạng thái</th>
+                      <th style="text-align: center !important;">Ngày mua</th>
+                      <th style="text-align: right !important; padding-right: 15px;">Hành động</th>
                     </tr>
                   </thead>
                   <tbody id="tbodyPOs">
                     <tr>
-                      <td colspan="5" class="text-center">Đang tải đơn mua hàng...</td>
+                      <td colspan="6" class="text-center">Đang tải đơn mua hàng...</td>
                     </tr>
                   </tbody>
                 </table>
@@ -721,7 +786,7 @@
                       <th>Tài liệu gốc</th>
                       <th>Đối tác</th>
                       <th>Trạng thái nhận kho</th>
-                      <th>Hành động</th>
+                      <th style="text-align: right !important; padding-right: 15px;">Hành động</th>
                     </tr>
                   </thead>
                   <tbody id="tbodyReceipts">
@@ -768,8 +833,9 @@
         <section class="tab-panel" id="panelProduction">
           <div class="glass-panel settings-container" style="margin-bottom: 24px;">
             <h2>Ghi Nhận Sản Lượng Sản Xuất Hàng Ngày</h2>
-            <p class="text-muted">Nhập sản lượng sản xuất thành phẩm của xưởng. Hệ thống sẽ tự động trừ đi nguyên liệu tồn kho theo định mức.</p>
-            
+            <p class="text-muted">Nhập sản lượng sản xuất thành phẩm của xưởng. Hệ thống sẽ tự động trừ đi nguyên liệu
+              tồn kho theo định mức.</p>
+
             <form id="formProduction" class="settings-form">
               <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
                 <div class="form-group" style="margin-bottom: 0;">
@@ -786,7 +852,8 @@
                 </div>
               </div>
               <div style="display: flex; justify-content: flex-end; margin-top: 12px;">
-                <button type="submit" class="btn btn-primary" id="btnSubmitProduction" style="margin: 0;">Ghi Nhận Sản Xuất & Trừ Kho</button>
+                <button type="submit" class="btn btn-primary" id="btnSubmitProduction" style="margin: 0;">Ghi Nhận Sản
+                  Xuất & Trừ Kho</button>
               </div>
             </form>
             <div class="responsive-table-wrapper" style="margin-top: 16px;">
@@ -838,8 +905,9 @@
         <section class="tab-panel" id="panelSales">
           <div class="glass-panel settings-container" style="margin-bottom: 24px;">
             <h2>Nhập Thông Tin Bán Hàng (Tạo Đơn Bán Hàng SO)</h2>
-            <p class="text-muted">Bộ phận kinh doanh: Nhập đơn đặt hàng của khách hàng. Hệ thống tự động tạo báo giá, xác nhận giao hàng và tạo hóa đơn nháp tương ứng.</p>
-            
+            <p class="text-muted">Bộ phận kinh doanh: Nhập đơn đặt hàng của khách hàng. Hệ thống tự động tạo báo giá,
+              xác nhận giao hàng và tạo hóa đơn nháp tương ứng.</p>
+
             <form id="formSalesOrder" class="settings-form">
               <div class="form-grid" style="grid-template-columns: 1fr 2fr; gap: 12px; margin-bottom: 12px;">
                 <div class="form-group" style="margin-bottom: 0;">
@@ -848,14 +916,19 @@
                     <select id="salesCustomer" class="form-input" required style="padding: 8px; flex: 1;">
                       <option value="">-- Chọn Khách Hàng --</option>
                     </select>
-                    <button type="button" class="btn btn-secondary btn-icon" id="btnCreateCustomerSales" title="Thêm Khách Hàng Mới" style="padding: 8px; font-size: 1rem; border-radius: 6px; display: flex; align-items: center; justify-content: center; height: 38px; width: 38px; margin: 0;">➕</button>
+                    <button type="button" class="btn btn-secondary btn-icon" id="btnCreateCustomerSales"
+                      title="Thêm Khách Hàng Mới"
+                      style="padding: 8px; font-size: 1rem; border-radius: 6px; display: flex; align-items: center; justify-content: center; height: 38px; width: 38px; margin: 0;">➕</button>
                   </div>
                 </div>
               </div>
-              
-              <div class="glass-panel" style="padding: 12px; margin-bottom: 12px; border: 1px dashed rgba(0, 0, 0, 0.1); background: rgba(0, 0, 0, 0.02); border-radius: 8px;">
-                <h4 style="margin-top: 0; margin-bottom: 8px; font-size: 0.9rem; font-weight: 600;">Thêm Dòng Sản Phẩm Đặt Hàng</h4>
-                <div class="form-grid" style="grid-template-columns: 2fr 1fr auto; gap: 12px; margin-bottom: 0; align-items: flex-end;">
+
+              <div class="glass-panel"
+                style="padding: 12px; margin-bottom: 12px; border: 1px dashed rgba(0, 0, 0, 0.1); background: rgba(0, 0, 0, 0.02); border-radius: 8px;">
+                <h4 style="margin-top: 0; margin-bottom: 8px; font-size: 0.9rem; font-weight: 600;">Thêm Dòng Sản Phẩm
+                  Đặt Hàng</h4>
+                <div class="form-grid"
+                  style="grid-template-columns: 2fr 1fr auto; gap: 12px; margin-bottom: 0; align-items: flex-end;">
                   <div class="form-group" style="margin-bottom: 0;">
                     <label for="salesProduct">Sản Phẩm Đặt Hàng:</label>
                     <div style="display: flex; gap: 6px; align-items: center;">
@@ -870,7 +943,8 @@
                   </div>
                   <input type="hidden" id="salesPrice" value="0">
                   <div>
-                    <button type="button" class="btn btn-secondary" id="btnAddSOLine" style="padding: 8px 16px;">Thêm Dòng</button>
+                    <button type="button" class="btn btn-secondary" id="btnAddSOLine" style="padding: 8px 16px;">Thêm
+                      Dòng</button>
                   </div>
                 </div>
               </div>
@@ -889,7 +963,8 @@
                   </thead>
                   <tbody id="tbodySOLines">
                     <tr>
-                      <td colspan="5" class="text-center text-muted" style="padding: 12px;">Chưa có dòng nào được thêm. Vui lòng chọn sản phẩm ở trên rồi nhấn "Thêm Dòng".</td>
+                      <td colspan="5" class="text-center text-muted" style="padding: 12px;">Chưa có dòng nào được thêm.
+                        Vui lòng chọn sản phẩm ở trên rồi nhấn "Thêm Dòng".</td>
                     </tr>
                   </tbody>
                 </table>
@@ -897,7 +972,8 @@
 
               <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px;">
                 <div style="font-size: 0.9rem; font-weight: 500;">
-                  Tổng cộng đơn hàng: <strong id="lblSOTotal" style="color: var(--primary-color); font-weight: 700; font-size: 1.1rem;">0 đ</strong>
+                  Tổng cộng đơn hàng: <strong id="lblSOTotal"
+                    style="color: var(--primary-color); font-weight: 700; font-size: 1.1rem;">0 đ</strong>
                 </div>
                 <button type="submit" class="btn btn-primary" id="btnSubmitSO">Tạo Đơn Bán Hàng & Hóa Đơn</button>
               </div>
@@ -929,7 +1005,7 @@
             </div>
           </div>
         </section>
-        
+
         <!-- ================= TERMINAL LOGS TAB ================= -->
         <section class="tab-panel" id="panelTerminal">
           <div class="glass-panel full-terminal-container">
@@ -941,58 +1017,63 @@
               </div>
             </div>
             <div class="terminal-body full-view" id="terminalOutputFull">
-              <div class="terminal-line system">[SYSTEM] Console Logs hoạt động bình thường. Logs sẽ tự động hiển thị khi bạn kích hoạt các script đồng bộ.</div>
+              <div class="terminal-line system">[SYSTEM] Console Logs hoạt động bình thường. Logs sẽ tự động hiển thị
+                khi bạn kích hoạt các script đồng bộ.</div>
             </div>
           </div>
         </section>
-        
+
         <!-- ================= SETTINGS TAB ================= -->
         <section class="tab-panel" id="panelSettings">
           <div class="glass-panel settings-container">
             <h2>Cấu Hình Kết Nối API Hệ Thống</h2>
-            <p class="text-muted">Thay đổi thông tin kết nối API Odoo ERP và Google Sheets tại đây. Dữ liệu được lưu trữ trực tiếp vào cấu hình server.</p>
-            
+            <p class="text-muted">Thay đổi thông tin kết nối API Odoo ERP và Google Sheets tại đây. Dữ liệu được lưu trữ
+              trực tiếp vào cấu hình server.</p>
+
             <form id="formSettings" class="settings-form">
               <div class="form-grid">
-                
+
                 <!-- Odoo URL -->
                 <div class="form-group">
                   <label for="odooUrl">URL Instance Odoo:</label>
-                  <input type="url" id="odooUrl" class="form-input" required placeholder="https://instance-name.odoo.com">
+                  <input type="url" id="odooUrl" class="form-input" required
+                    placeholder="https://instance-name.odoo.com">
                 </div>
-                
+
                 <!-- Database -->
                 <div class="form-group">
                   <label for="odooDb">Tên Database Odoo:</label>
                   <input type="text" id="odooDb" class="form-input" required placeholder="db-name">
                 </div>
-                
+
                 <!-- Login -->
                 <div class="form-group">
                   <label for="odooLogin">Email Đăng Nhập:</label>
                   <input type="email" id="odooLogin" class="form-input" required placeholder="email@example.com">
                 </div>
-                
+
                 <!-- Password -->
                 <div class="form-group">
                   <label for="odooPassword">Mật khẩu:</label>
                   <input type="password" id="odooPassword" class="form-input" required placeholder="password">
                 </div>
-                
+
                 <!-- Google Spreadsheet ID -->
                 <div class="form-group full-width">
                   <label for="sheetId">Google Sheets ID (Spreadsheet ID):</label>
-                  <input type="text" id="sheetId" class="form-input" required placeholder="e.g. 1Jzw_V9e4Gfw1QKr11YIa9SVLqaLwvD8cH7dZ7HgWGYE">
+                  <input type="text" id="sheetId" class="form-input" required
+                    placeholder="e.g. 1Jzw_V9e4Gfw1QKr11YIa9SVLqaLwvD8cH7dZ7HgWGYE">
                 </div>
-                
+
                 <!-- Google Service Account Credential Content -->
                 <div class="form-group full-width">
                   <label for="credsContent">Nội Dung Google Credentials JSON (Service Account):</label>
-                  <textarea id="credsContent" class="form-input code-input" rows="8" placeholder='{"type": "service_account", "project_id": ...}'></textarea>
+                  <textarea id="credsContent" class="form-input code-input" rows="8"
+                    placeholder='{"type": "service_account", "project_id": ...}'></textarea>
                 </div>
-                
+
               </div>
-              
+
               <div class="form-actions">
                 <button type="submit" class="btn btn-primary" id="btnSaveSettings">Lưu Cấu Hình</button>
                 <button type="button" class="btn btn-secondary" id="btnResetSettings">Khôi Phục Mặc Định</button>
@@ -1005,7 +1086,8 @@
               <h2>Quản Lý Phê Duyệt Tài Khoản (Admin)</h2>
               <button class="btn btn-secondary btn-sm" id="btnRefreshUsers">Tải Lại Danh Sách</button>
             </div>
-            <p class="text-muted" style="margin-bottom: 16px;">Phê duyệt hoặc xóa tài khoản đăng ký của nhân viên. Hệ thống giới hạn tối đa 2 Admin.</p>
+            <p class="text-muted" style="margin-bottom: 16px;">Phê duyệt hoặc xóa tài khoản đăng ký của nhân viên. Hệ
+              thống giới hạn tối đa 2 Admin.</p>
             <div class="responsive-table-wrapper">
               <table id="tblUsers">
                 <thead>
@@ -1026,10 +1108,10 @@
             </div>
           </div>
         </section>
-        
+
       </div>
     </main>
-    
+
   </div>
 
   <!-- Toast Notification System -->
@@ -1039,7 +1121,8 @@
   <dialog id="confirmDialog" closedby="any" class="custom-dialog">
     <form method="dialog" class="dialog-content">
       <h3 id="dialogTitle">Xác Nhận Hành Động</h3>
-      <p id="dialogMessage">Bạn có chắc chắn muốn chạy script đồng bộ này không? Tiến trình này có thể mất tới vài phút.</p>
+      <p id="dialogMessage">Bạn có chắc chắn muốn chạy script đồng bộ này không? Tiến trình này có thể mất tới vài phút.
+      </p>
       <div class="dialog-buttons">
         <button type="button" class="btn btn-secondary" id="btnCancelDialog">Hủy Bỏ</button>
         <button type="submit" class="btn btn-primary" id="btnConfirmDialog">Tiếp Tục</button>
@@ -1052,7 +1135,7 @@
     <form id="formProduct" class="dialog-content">
       <h3 id="productDialogTitle">Thêm Sản Phẩm Mới</h3>
       <input type="hidden" id="prodId">
-      
+
       <div class="form-group">
         <label for="prodName">Tên Sản Phẩm:</label>
         <input type="text" id="prodName" class="form-input" required placeholder="Nhập tên sản phẩm...">
@@ -1071,7 +1154,8 @@
         </select>
       </div>
 
-      <div class="form-grid" id="prodPriceCostGrid" style="grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 0;">
+      <div class="form-grid" id="prodPriceCostGrid"
+        style="grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 0;">
         <div class="form-group" id="prodPriceGroup">
           <label for="prodPrice">Giá Bán (đ):</label>
           <input type="number" id="prodPrice" class="form-input" required min="0" value="0">
@@ -1089,7 +1173,8 @@
 
       <div class="form-group">
         <label for="prodDesc">Ghi Chú / Mô Tả:</label>
-        <textarea id="prodDesc" class="form-input" rows="3" placeholder="Nhập ghi chú hoặc thông tin bổ sung..."></textarea>
+        <textarea id="prodDesc" class="form-input" rows="3"
+          placeholder="Nhập ghi chú hoặc thông tin bổ sung..."></textarea>
       </div>
 
       <div class="dialog-buttons">
@@ -1098,16 +1183,17 @@
       </div>
     </form>
   </dialog>
-  
+
   <!-- Partner Create Modal -->
   <dialog id="partnerDialog" closedby="any" class="custom-dialog">
     <form id="formPartner" class="dialog-content">
       <h3 id="partnerDialogTitle">Thêm Đối Tác Mới</h3>
       <input type="hidden" id="partnerType" value="vendor">
-      
+
       <div class="form-group">
         <label for="partnerName">Tên Đối Tác:</label>
-        <input type="text" id="partnerName" class="form-input" required placeholder="Nhập tên khách hàng hoặc nhà cung cấp...">
+        <input type="text" id="partnerName" class="form-input" required
+          placeholder="Nhập tên khách hàng hoặc nhà cung cấp...">
       </div>
 
       <div class="form-group">
@@ -1132,12 +1218,12 @@
     <form id="formPayment" class="dialog-content">
       <h3 id="paymentDialogTitle">Cập Nhật Thanh Toán & Số Hóa Đơn GTGT</h3>
       <input type="hidden" id="payInvoiceId">
-      
+
       <div class="form-group">
         <label for="payStatus">Trạng Thái Thanh Toán:</label>
         <select id="payStatus" class="form-input" style="padding: 8px;" required>
           <option value="not_paid">Chưa thanh toán</option>
-          <option value="partial">Đã đặt cọc (Thanh toán một phần)</option>
+          <option value="partial">Đang thanh toán (Thanh toán một phần)</option>
           <option value="paid">Đã thanh toán</option>
         </select>
       </div>
@@ -1145,7 +1231,8 @@
       <div class="form-group" id="payAmountGroup" style="display: none;">
         <label for="payAmount">Số Tiền Đã Thanh Toán / Đặt Cọc (đ):</label>
         <input type="number" id="payAmount" class="form-input" min="0" value="0">
-        <span class="text-muted" style="font-size: 0.8rem; margin-top: 4px; display: block;" id="payAmountHelp">Tổng tiền hóa đơn: <span id="payTotalAmountVal">0</span> đ</span>
+        <span class="text-muted" style="font-size: 0.8rem; margin-top: 4px; display: block;" id="payAmountHelp">Tổng
+          tiền hóa đơn: <span id="payTotalAmountVal">0</span> đ</span>
       </div>
 
       <div class="form-group">
@@ -1169,7 +1256,7 @@
   <dialog id="registerDialog" closedby="any" class="custom-dialog">
     <form id="formRegister" class="dialog-content">
       <h3 id="registerDialogTitle">Đăng Ký Tài Khoản Nhân Viên</h3>
-      
+
       <div class="form-group">
         <label for="regUsername">Tên Đăng Nhập (Username):</label>
         <input type="text" id="regUsername" class="form-input" required placeholder="Viết liền không dấu...">
@@ -1195,7 +1282,8 @@
         <input type="password" id="regPassword" class="form-input" required placeholder="Nhập mật khẩu...">
       </div>
 
-      <div id="regErrorMsg" class="text-danger" style="display: none; font-size: 0.85rem; font-weight: 500; margin-top: 4px;"></div>
+      <div id="regErrorMsg" class="text-danger"
+        style="display: none; font-size: 0.85rem; font-weight: 500; margin-top: 4px;"></div>
 
       <div class="dialog-buttons">
         <button type="button" class="btn btn-secondary" id="btnCancelRegister">Hủy Bỏ</button>
@@ -1208,7 +1296,7 @@
   <dialog id="changePasswordDialog" closedby="any" class="custom-dialog">
     <form id="formChangePassword" class="dialog-content">
       <h3 id="cpwDialogTitle">Đổi Mật Khẩu</h3>
-      
+
       <div class="form-group">
         <label for="cpwOldPassword">Mật Khẩu Cũ:</label>
         <input type="password" id="cpwOldPassword" class="form-input" required placeholder="Nhập mật khẩu hiện tại...">
@@ -1219,7 +1307,8 @@
         <input type="password" id="cpwNewPassword" class="form-input" required placeholder="Nhập mật khẩu mới...">
       </div>
 
-      <div id="cpwErrorMsg" class="text-danger" style="display: none; font-size: 0.85rem; font-weight: 500; margin-top: 4px;"></div>
+      <div id="cpwErrorMsg" class="text-danger"
+        style="display: none; font-size: 0.85rem; font-weight: 500; margin-top: 4px;"></div>
 
       <div class="dialog-buttons">
         <button type="button" class="btn btn-secondary" id="btnCancelChangePassword">Hủy Bỏ</button>
@@ -1233,34 +1322,43 @@
     <div class="login-card glass-panel">
       <div class="login-header">
         <div class="login-brand">
-          <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 36px; height: 36px;">
-            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-            <polyline points="22,6 12,13 2,6"/>
+          <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            style="width: 36px; height: 36px;">
+            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+            <polyline points="22,6 12,13 2,6" />
           </svg>
-          <span style="font-size: 1.5rem; font-weight: 700; background: var(--accent-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center;">Theo dõi hoạt động sản xuất tại các xưởng</span>
+          <span
+            style="font-size: 1.5rem; font-weight: 700; background: var(--accent-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center;">Theo
+            dõi hoạt động sản xuất tại các xưởng</span>
         </div>
-        <p class="text-muted" style="font-size: 0.9rem; text-align: center; margin-top: 6px;">Hệ thống quản lý đồng bộ & phân quyền tác vụ</p>
+        <p class="text-muted" style="font-size: 0.9rem; text-align: center; margin-top: 6px;">Hệ thống quản lý đồng bộ &
+          phân quyền tác vụ</p>
       </div>
 
       <form id="formLogin" class="settings-form" style="margin-top: 20px;">
         <div class="form-group">
           <label for="loginUsername">Tên Đăng Nhập (Username):</label>
-          <input type="text" id="loginUsername" class="form-input" required placeholder="Nhập tên tài khoản..." style="padding: 10px; font-size: 0.95rem; width: 100%;">
+          <input type="text" id="loginUsername" class="form-input" required placeholder="Nhập tên tài khoản..."
+            style="padding: 10px; font-size: 0.95rem; width: 100%;">
         </div>
 
         <div class="form-group">
           <label for="loginPassword">Mật Khẩu Truy Cập:</label>
-          <input type="password" id="loginPassword" class="form-input" required placeholder="Nhập mật khẩu..." style="padding: 10px; font-size: 0.95rem; width: 100%;">
+          <input type="password" id="loginPassword" class="form-input" required placeholder="Nhập mật khẩu..."
+            style="padding: 10px; font-size: 0.95rem; width: 100%;">
         </div>
 
-        <div id="loginErrorMsg" class="text-danger" style="display: none; font-size: 0.85rem; font-weight: 500; margin-top: 4px; text-align: center;">
+        <div id="loginErrorMsg" class="text-danger"
+          style="display: none; font-size: 0.85rem; font-weight: 500; margin-top: 4px; text-align: center;">
           Tên đăng nhập hoặc mật khẩu không chính xác.
         </div>
 
-        <button type="submit" class="btn btn-primary" id="btnLoginSubmit" style="width: 100%; padding: 12px; font-size: 1rem; font-weight: 600; margin-top: 16px; border-radius: var(--border-radius-md);">
+        <button type="submit" class="btn btn-primary" id="btnLoginSubmit"
+          style="width: 100%; padding: 12px; font-size: 1rem; font-weight: 600; margin-top: 16px; border-radius: var(--border-radius-md);">
           Đăng Nhập Hệ Thống
         </button>
-        <button type="button" class="btn btn-secondary" id="btnShowRegister" style="width: 100%; padding: 12px; font-size: 1rem; font-weight: 600; margin-top: 8px; border-radius: var(--border-radius-md);">
+        <button type="button" class="btn btn-secondary" id="btnShowRegister"
+          style="width: 100%; padding: 12px; font-size: 1rem; font-weight: 600; margin-top: 8px; border-radius: var(--border-radius-md);">
           Đăng Ký Tài Khoản Mới
         </button>
       </form>
@@ -1314,4 +1412,5 @@
 
   <script src="js/app.js"></script>
 </body>
+
 </html>
