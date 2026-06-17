@@ -1,5 +1,18 @@
 const axios = require('axios');
 
+// In-memory Odoo Session Cache
+let cachedCookie = null;
+let cachedCookieKey = null;
+let cachedCookieTime = 0;
+const SESSION_TTL = 20 * 60 * 1000; // 20 minutes
+
+function clearOdooSessionCache() {
+  cachedCookie = null;
+  cachedCookieKey = null;
+  cachedCookieTime = 0;
+  console.log('Odoo session cache cleared.');
+}
+
 async function odooRpc(config, path, payload, sessionCookie = '') {
   const url = config.odooUrl + path;
   const headers = { 'Content-Type': 'application/json; charset=utf-8' };
@@ -9,7 +22,7 @@ async function odooRpc(config, path, payload, sessionCookie = '') {
   
   const res = await axios.post(url, payload, {
     headers,
-    timeout: 10000,
+    timeout: 15000,
     validateStatus: () => true
   });
   
@@ -26,28 +39,57 @@ async function odooRpc(config, path, payload, sessionCookie = '') {
   return { result: res.data.result, cookie };
 }
 
-async function odooCall(config, model, method, args = [], kwargs = {}, sessionCookie = '') {
-  const payload = {
-    jsonrpc: '2.0',
-    method: 'call',
-    params: { model, method, args, kwargs }
-  };
-  const { result } = await odooRpc(config, '/web/dataset/call_kw', payload, sessionCookie);
-  return result;
-}
-
 async function odooAuth(config) {
+  const now = Date.now();
+  const cacheKey = `${config.odooUrl}-${config.db}-${config.login}-${config.password}`;
+  if (cachedCookie && cachedCookieKey === cacheKey && (now - cachedCookieTime < SESSION_TTL)) {
+    return cachedCookie;
+  }
+
   const payload = {
     jsonrpc: '2.0',
     method: 'call',
     params: { db: config.db, login: config.login, password: config.password }
   };
   try {
+    console.log(`Authenticating Odoo session for db: ${config.db}...`);
     const { cookie } = await odooRpc(config, '/web/session/authenticate', payload);
     if (!cookie) throw new Error('Failed to obtain session cookie from Odoo');
+    
+    cachedCookie = cookie;
+    cachedCookieKey = cacheKey;
+    cachedCookieTime = now;
+    
     return cookie;
   } catch (error) {
     console.error('Odoo authentication failed for database:', config.db, 'URL:', config.odooUrl, 'login:', config.login, 'error:', error.message);
+    throw error;
+  }
+}
+
+async function odooCall(config, model, method, args = [], kwargs = {}, sessionCookie = '') {
+  const cookie = sessionCookie || await odooAuth(config);
+  const payload = {
+    jsonrpc: '2.0',
+    method: 'call',
+    params: { model, method, args, kwargs }
+  };
+  try {
+    const { result } = await odooRpc(config, '/web/dataset/call_kw', payload, cookie);
+    return result;
+  } catch (error) {
+    // If it is a session expired error and we used a cached cookie, retry once with a fresh login
+    const isExpired = error.message.includes('Session Expired') || 
+                      error.message.includes('expired') || 
+                      error.message.includes('UID') ||
+                      error.message.includes('not logged in');
+    if (isExpired && !sessionCookie) {
+      console.warn('Odoo session expired/invalid. Retrying with fresh login...');
+      clearOdooSessionCache();
+      const newCookie = await odooAuth(config);
+      const { result } = await odooRpc(config, '/web/dataset/call_kw', payload, newCookie);
+      return result;
+    }
     throw error;
   }
 }
@@ -73,5 +115,6 @@ module.exports = {
   odooRpc,
   odooCall,
   odooAuth,
-  resolveProductVariant
+  resolveProductVariant,
+  clearOdooSessionCache
 };

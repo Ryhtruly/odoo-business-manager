@@ -11,6 +11,7 @@ const { odooCall, odooAuth, resolveProductVariant } = require('../services/odooS
 const { resolveProductionBom } = require('../services/bomService');
 const { checkRole } = require('../middlewares/authMiddleware');
 const { hashPassword, isPasswordHash, safeUser, signToken, verifyPassword } = require('../services/authService');
+const { getGoogleAccessToken } = require('../services/googleSheetsService');
 
 function buildProductPayload(vals) {
   let typeVal = vals.type || 'consu';
@@ -54,6 +55,150 @@ function buildProductPayload(vals) {
     description: vals.description || ''
   };
 }
+
+async function updateProductCostsFromReceipt(config, pickingId, cookie) {
+  try {
+    const pickings = await odooCall(config, 'stock.picking', 'read', [[pickingId], ['origin', 'purchase_id']], {}, cookie);
+    if (!pickings || !pickings.length) return;
+    const origin = pickings[0].origin;
+    const purchaseId = pickings[0].purchase_id ? pickings[0].purchase_id[0] : null;
+
+    const moves = await odooCall(config, 'stock.move', 'search_read', [], {
+      domain: [['picking_id', '=', pickingId]],
+      fields: ['id', 'product_id', 'purchase_line_id']
+    }, cookie);
+
+    for (const move of moves) {
+      if (!move.product_id) continue;
+      const variantId = move.product_id[0];
+      let priceUnit = 0;
+
+      if (move.purchase_line_id) {
+        const poLines = await odooCall(config, 'purchase.order.line', 'read', [[move.purchase_line_id[0]], ['price_unit']], {}, cookie);
+        if (poLines && poLines.length) {
+          priceUnit = Number(poLines[0].price_unit || 0);
+        }
+      }
+
+      if (priceUnit <= 0) {
+        let poDomain = [];
+        if (purchaseId) {
+          poDomain = [['id', '=', purchaseId]];
+        } else if (origin) {
+          poDomain = [['name', '=', origin]];
+        }
+        if (poDomain.length) {
+          const pos = await odooCall(config, 'purchase.order', 'search_read', [], {
+            domain: poDomain,
+            fields: ['id'],
+            limit: 1
+          }, cookie);
+          if (pos && pos.length) {
+            const lines = await odooCall(config, 'purchase.order.line', 'search_read', [], {
+              domain: [['order_id', '=', pos[0].id], ['product_id', '=', variantId]],
+              fields: ['price_unit'],
+              limit: 1
+            }, cookie);
+            if (lines && lines.length) {
+              priceUnit = Number(lines[0].price_unit || 0);
+            }
+          }
+        }
+      }
+
+      if (priceUnit > 0) {
+        const variants = await odooCall(config, 'product.product', 'read', [[variantId], ['product_tmpl_id']], {}, cookie);
+        if (variants && variants.length && variants[0].product_tmpl_id) {
+          const templateId = variants[0].product_tmpl_id[0];
+          await odooCall(config, 'product.template', 'write', [[templateId], { standard_price: priceUnit }], {}, cookie);
+          console.log(`Updated standard_price of template ${templateId} to ${priceUnit}`);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error updating product costs from receipt:', err.message);
+  }
+}
+
+async function validatePickingInternal(config, pickingId, cookie) {
+  const lineFieldInfo = await odooCall(config, 'stock.move.line', 'fields_get', [], {
+    attributes: ['type']
+  }, cookie);
+  const hasLineField = (fieldName) => Object.prototype.hasOwnProperty.call(lineFieldInfo || {}, fieldName);
+  const doneField = hasLineField('qty_done') ? 'qty_done' : (hasLineField('quantity') ? 'quantity' : null);
+  const plannedFields = ['product_uom_qty', 'reserved_uom_qty', 'quantity'].filter(hasLineField);
+  const lineFields = ['id', ...new Set([...plannedFields, doneField].filter(Boolean))];
+
+  const moveLines = await odooCall(config, 'stock.move.line', 'search_read', [], {
+    domain: [['picking_id', '=', pickingId]],
+    fields: lineFields
+  }, cookie);
+
+  if (doneField) {
+    for (const line of moveLines) {
+      const plannedQty = plannedFields
+        .map(field => Number(line[field] || 0))
+        .find(qty => qty > 0) || 0;
+      const currentDoneQty = Number(line[doneField] || 0);
+      if (plannedQty > 0 && currentDoneQty <= 0) {
+        await odooCall(config, 'stock.move.line', 'write', [[line.id], { [doneField]: plannedQty }], {}, cookie);
+      }
+    }
+  }
+
+  await odooCall(config, 'stock.picking', 'button_validate', [[pickingId]], {
+    context: { skip_immediate: true, skip_backorder: true }
+  }, cookie);
+
+  await updateProductCostsFromReceipt(config, pickingId, cookie);
+}
+
+async function createVendorBillForPO(config, poId, cookie) {
+  try {
+    try {
+      await odooCall(config, 'purchase.order', 'action_create_bill', [[poId]], {}, cookie);
+    } catch (billErr) {
+      console.warn('Odoo action_create_bill method call failed:', billErr.message);
+    }
+    
+    const poData = await odooCall(config, 'purchase.order', 'read', [[poId], ['invoice_ids', 'partner_id', 'order_line', 'name']], {}, cookie);
+    if (poData && poData.length && poData[0].invoice_ids && poData[0].invoice_ids.length) {
+      console.log('Vendor bill created successfully via action_create_bill:', poData[0].invoice_ids);
+      return poData[0].invoice_ids[0];
+    }
+
+    console.log('Falling back to manual vendor bill creation for PO', poId);
+    const partnerId = poData[0].partner_id[0];
+    const lineIds = poData[0].order_line;
+    const lines = await odooCall(config, 'purchase.order.line', 'read', [lineIds, ['product_id', 'product_qty', 'price_unit', 'name']], {}, cookie);
+
+    const invoiceLineIds = lines.map(l => [0, 0, {
+      product_id: l.product_id[0],
+      quantity: Number(l.product_qty),
+      price_unit: Number(l.price_unit),
+      name: l.name || 'Nhập hàng từ PO'
+    }]);
+
+    if (invoiceLineIds.length) {
+      const invoiceId = await odooCall(config, 'account.move', 'create', [{
+        move_type: 'in_invoice',
+        partner_id: partnerId,
+        invoice_origin: poData[0].name || `PO${poId}`,
+        invoice_line_ids: invoiceLineIds
+      }], {}, cookie);
+      
+      try {
+        await odooCall(config, 'account.move', 'write', [[invoiceId], { purchase_id: poId }], {}, cookie);
+      } catch (e) {
+      }
+      return invoiceId;
+    }
+  } catch (err) {
+    console.error('Error creating vendor bill for PO:', err.message);
+  }
+  return null;
+}
+
 
 router.post('/auth/login', (req, res) => {
   try {
@@ -251,33 +396,7 @@ router.get('/odoo/status', checkRole(['ke_toan_kho', 'san_xuat', 'kinh_doanh', '
   // Test Google Sheets Connection (only if creds content is provided)
   if (config.credsContent && config.sheetId) {
     try {
-      const sa = JSON.parse(config.credsContent);
-      // Generate JWT and fetch access token
-      const header = { alg: 'RS256', typ: 'JWT' };
-      const now = Math.floor(Date.now() / 1000);
-      const claim = { 
-        iss: sa.client_email, 
-        scope: 'https://www.googleapis.com/auth/spreadsheets', 
-        aud: 'https://oauth2.googleapis.com/token', 
-        iat: now, 
-        exp: now + 3600 
-      };
-      
-      const b64 = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-      const unsigned = `${b64(header)}.${b64(claim)}`;
-      const crypto = require('crypto');
-      const signer = crypto.createSign('RSA-SHA256');
-      signer.update(unsigned);
-      const sig = signer.sign(sa.private_key, 'base64');
-      const jwt = `${unsigned}.${sig.replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')}`;
-      
-      const body = new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: jwt }).toString();
-      const tokenRes = await axios.post('https://oauth2.googleapis.com/token', body, { 
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        timeout: 5000
-      });
-      
-      const token = tokenRes.data.access_token;
+      const token = await getGoogleAccessToken(config);
       // Fetch sheet info
       const sheetRes = await axios.get(`https://sheets.googleapis.com/v4/spreadsheets/${config.sheetId}?fields=properties.title`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -460,19 +579,45 @@ router.get('/odoo/partners', checkRole(['ke_toan_kho', 'kinh_doanh', 'ke_toan_ba
     const config = loadConfig();
     const cookie = await odooAuth(config);
     const type = req.query.type;
-    let domain = [];
+    let domain = [['active', 'in', [true, false]]]; // Show active and archived to see Ngừng hợp tác
     if (type === 'customer') {
-      domain = [['customer_rank', '>', 0]];
+      domain.push(['customer_rank', '>', 0]);
     } else if (type === 'vendor') {
-      domain = [['supplier_rank', '>', 0]];
+      domain.push(['supplier_rank', '>', 0]);
     }
-    const partners = await odooCall(config, 'res.partner', 'search_read', [], {
-      domain,
-      limit: 100,
-      order: 'name asc',
-      fields: ['id', 'name', 'street', 'phone']
-    }, cookie);
-    res.json(partners);
+    
+    let fields = ['id', 'name', 'street', 'phone', 'active', 'debit', 'credit', 'purchase_order_count', 'sale_order_count'];
+    let partners;
+    try {
+      partners = await odooCall(config, 'res.partner', 'search_read', [], {
+        domain,
+        limit: 100,
+        order: 'name asc',
+        fields
+      }, cookie);
+    } catch (fieldsErr) {
+      console.warn('Odoo does not support all partner details fields, falling back to standard fields:', fieldsErr.message);
+      fields = ['id', 'name', 'street', 'phone', 'active'];
+      partners = await odooCall(config, 'res.partner', 'search_read', [], {
+        domain,
+        limit: 100,
+        order: 'name asc',
+        fields
+      }, cookie);
+    }
+
+    const result = partners.map(p => ({
+      id: p.id,
+      name: p.name || '',
+      street: p.street || '',
+      phone: p.phone || '',
+      active: p.active !== false,
+      debit: p.debit || 0,
+      credit: p.credit || 0,
+      has_transactions: (p.purchase_order_count > 0 || p.sale_order_count > 0)
+    }));
+
+    res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -518,6 +663,10 @@ router.put('/odoo/partners/:id', checkRole(['ke_toan_kho', 'kinh_doanh', 'ke_toa
       is_company: body.is_company !== false
     };
     
+    if (body.active !== undefined) {
+      payload.active = body.active;
+    }
+    
     if (body.type === 'vendor') {
       payload.supplier_rank = 1;
     } else if (body.type === 'customer') {
@@ -526,6 +675,44 @@ router.put('/odoo/partners/:id', checkRole(['ke_toan_kho', 'kinh_doanh', 'ke_toa
     
     await odooCall(config, 'res.partner', 'write', [[id], payload], {}, cookie);
     res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+router.delete('/odoo/partners/:id', checkRole(['ke_toan_kho', 'kinh_doanh', 'ke_toan_ban_hang']), async (req, res) => {
+  try {
+    const config = loadConfig();
+    const cookie = await odooAuth(config);
+    const id = Number(req.params.id);
+
+    // Check transaction count first to be safe
+    let hasTransactions = false;
+    try {
+      const p = await odooCall(config, 'res.partner', 'read', [[id], ['purchase_order_count', 'sale_order_count']], {}, cookie);
+      if (p && p.length) {
+        hasTransactions = (p[0].purchase_order_count > 0 || p[0].sale_order_count > 0);
+      }
+    } catch (e) {
+      // Fallback
+    }
+
+    if (hasTransactions) {
+      // Archive instead of delete
+      await odooCall(config, 'res.partner', 'write', [[id], { active: false }], {}, cookie);
+      return res.json({ success: true, action: 'archive', message: 'Đối tác đã có giao dịch. Đã tự động lưu trữ/ngừng hợp tác để bảo toàn dữ liệu.' });
+    }
+
+    try {
+      // Try unlinking
+      await odooCall(config, 'res.partner', 'unlink', [[id]], {}, cookie);
+      res.json({ success: true, action: 'delete', message: 'Đã xóa đối tác thành công.' });
+    } catch (err) {
+      console.warn(`Unlink failed for partner ${id}, archiving instead:`, err.message);
+      // Archive on failure due to constraints
+      await odooCall(config, 'res.partner', 'write', [[id], { active: false }], {}, cookie);
+      res.json({ success: true, action: 'archive', message: 'Đối tác đã phát sinh giao dịch trong Odoo. Đã tự động chuyển trạng thái ngừng hợp tác.' });
+    }
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
@@ -558,14 +745,125 @@ router.post('/odoo/purchase-orders', checkRole(['ke_toan_kho']), async (req, res
     }
     const poId = await odooCall(config, 'purchase.order', 'create', [createData], {}, cookie);
     
+    if (body.draft === true) {
+      return res.json({ success: true, id: poId, state: 'draft' });
+    }
+
     // Confirm PO (button_confirm)
+    let pickingId = null;
+    let billId = null;
+    let warning = '';
     try {
       await odooCall(config, 'purchase.order', 'button_confirm', [[poId]], {}, cookie);
+
+      // Read PO to get name
+      const poData = await odooCall(config, 'purchase.order', 'read', [[poId], ['name']], {}, cookie);
+      const poName = poData[0]?.name;
+
+      // Find picking
+      const pickings = await odooCall(config, 'stock.picking', 'search_read', [], {
+        domain: [['purchase_id', '=', poId], ['state', '!=', 'done']],
+        fields: ['id'],
+        limit: 1
+      }, cookie);
+
+      if (pickings && pickings.length) {
+        pickingId = pickings[0].id;
+      } else if (poName) {
+        const pickingsByOrigin = await odooCall(config, 'stock.picking', 'search_read', [], {
+          domain: [['origin', '=', poName], ['state', '!=', 'done']],
+          fields: ['id'],
+          limit: 1
+        }, cookie);
+        if (pickingsByOrigin && pickingsByOrigin.length) {
+          pickingId = pickingsByOrigin[0].id;
+        }
+      }
+
+      // Validate picking and update prices
+      if (pickingId) {
+        try {
+          await validatePickingInternal(config, pickingId, cookie);
+        } catch (pickingErr) {
+          console.warn('Validate picking failed during PO confirm:', pickingErr.message);
+          warning += ` Đơn hàng đã xác nhận nhưng lỗi tự động nhập kho: ${pickingErr.message}.`;
+        }
+      }
+
+      // Create draft vendor bill
+      try {
+        billId = await createVendorBillForPO(config, poId, cookie);
+      } catch (billErr) {
+        console.warn('Create bill failed during PO confirm:', billErr.message);
+        warning += ` Đơn hàng đã xác nhận nhưng lỗi tự động tạo hóa đơn nháp: ${billErr.message}.`;
+      }
+
     } catch (confirmErr) {
-      console.warn('PO Confirm skipped or failed', confirmErr.message);
+      console.warn('PO Confirm failed:', confirmErr.message);
+      warning = `Tạo đơn nháp thành công, nhưng không thể tự động xác nhận: ${confirmErr.message}`;
     }
     
-    res.json({ success: true, id: poId });
+    res.json({ success: true, id: poId, pickingId, billId, warning: warning || undefined });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+router.post('/odoo/purchase-orders/:id/confirm', checkRole(['ke_toan_kho']), async (req, res) => {
+  try {
+    const config = loadConfig();
+    const cookie = await odooAuth(config);
+    const poId = Number(req.params.id);
+
+    // 1. Confirm PO
+    await odooCall(config, 'purchase.order', 'button_confirm', [[poId]], {}, cookie);
+
+    // 2. Read PO to get name
+    const poData = await odooCall(config, 'purchase.order', 'read', [[poId], ['name']], {}, cookie);
+    const poName = poData[0]?.name;
+
+    // 3. Find related picking
+    let pickingId = null;
+    const pickings = await odooCall(config, 'stock.picking', 'search_read', [], {
+      domain: [['purchase_id', '=', poId], ['state', '!=', 'done']],
+      fields: ['id'],
+      limit: 1
+    }, cookie);
+
+    if (pickings && pickings.length) {
+      pickingId = pickings[0].id;
+    } else if (poName) {
+      const pickingsByOrigin = await odooCall(config, 'stock.picking', 'search_read', [], {
+        domain: [['origin', '=', poName], ['state', '!=', 'done']],
+        fields: ['id'],
+        limit: 1
+      }, cookie);
+      if (pickingsByOrigin && pickingsByOrigin.length) {
+        pickingId = pickingsByOrigin[0].id;
+      }
+    }
+
+    let warning = '';
+    // 4. Validate the picking and update costs
+    if (pickingId) {
+      try {
+        await validatePickingInternal(config, pickingId, cookie);
+      } catch (pickingErr) {
+        console.warn('Validate picking failed during PO manual confirm:', pickingErr.message);
+        warning += ` Lỗi tự động nhập kho: ${pickingErr.message}.`;
+      }
+    }
+
+    // 5. Create draft vendor bill
+    let billId = null;
+    try {
+      billId = await createVendorBillForPO(config, poId, cookie);
+    } catch (billErr) {
+      console.warn('Create bill failed during PO manual confirm:', billErr.message);
+      warning += ` Lỗi tự động tạo hóa đơn nháp: ${billErr.message}.`;
+    }
+
+    res.json({ success: true, message: 'Đơn mua hàng đã được xác nhận thành công.', pickingId, billId, warning: warning || undefined });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
@@ -577,36 +875,122 @@ router.post('/odoo/receipts/:id/validate', checkRole(['ke_toan_kho']), async (re
     const cookie = await odooAuth(config);
     const id = Number(req.params.id);
 
-    const lineFieldInfo = await odooCall(config, 'stock.move.line', 'fields_get', [], {
-      attributes: ['type']
-    }, cookie);
-    const hasLineField = (fieldName) => Object.prototype.hasOwnProperty.call(lineFieldInfo || {}, fieldName);
-    const doneField = hasLineField('qty_done') ? 'qty_done' : (hasLineField('quantity') ? 'quantity' : null);
-    const plannedFields = ['product_uom_qty', 'reserved_uom_qty', 'quantity'].filter(hasLineField);
-    const lineFields = ['id', ...new Set([...plannedFields, doneField].filter(Boolean))];
+    await validatePickingInternal(config, id, cookie);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
 
-    const moveLines = await odooCall(config, 'stock.move.line', 'search_read', [], {
-      domain: [['picking_id', '=', id]],
-      fields: lineFields
-    }, cookie);
+router.post('/odoo/receipts/:id/return', checkRole(['ke_toan_kho']), async (req, res) => {
+  try {
+    const config = loadConfig();
+    const cookie = await odooAuth(config);
+    const pickingId = Number(req.params.id);
+    const { items } = req.body;
 
-    if (doneField) {
-      for (const line of moveLines) {
-        const plannedQty = plannedFields
-          .map(field => Number(line[field] || 0))
-          .find(qty => qty > 0) || 0;
-        const currentDoneQty = Number(line[doneField] || 0);
-        if (plannedQty > 0 && currentDoneQty <= 0) {
-          await odooCall(config, 'stock.move.line', 'write', [[line.id], { [doneField]: plannedQty }], {}, cookie);
-        }
+    if (!items || !items.length) {
+      return res.status(400).json({ success: false, error: 'Danh sách sản phẩm trả hàng không được để trống' });
+    }
+
+    const pickings = await odooCall(config, 'stock.picking', 'read', [[pickingId], ['id', 'name', 'partner_id', 'location_id', 'location_dest_id', 'picking_type_id', 'move_lines']], {}, cookie);
+    if (!pickings || !pickings.length) {
+      return res.status(404).json({ success: false, error: 'Không tìm thấy phiếu nhận kho gốc' });
+    }
+    const picking = pickings[0];
+
+    let originalMoves = [];
+    if (picking.move_lines && picking.move_lines.length) {
+      originalMoves = await odooCall(config, 'stock.move', 'read', [picking.move_lines, ['product_id', 'quantity_done', 'state']], {}, cookie);
+    }
+    
+    const doneQtyMap = new Map();
+    for (const move of originalMoves) {
+      if (move.product_id) {
+        const varId = move.product_id[0];
+        doneQtyMap.set(varId, (doneQtyMap.get(varId) || 0) + Number(move.quantity_done || 0));
       }
     }
 
-    await odooCall(config, 'stock.picking', 'button_validate', [[id]], {
-      context: { skip_immediate: true, skip_backorder: true }
+    const returnMoves = [];
+    const creditNoteLines = [];
+
+    for (const item of items) {
+      const variantId = item.variant_id ? Number(item.variant_id) : await resolveProductVariant(config, Number(item.product_tmpl_id), cookie);
+      const originalDone = doneQtyMap.get(variantId) || 0;
+      if (Number(item.qty) > originalDone) {
+        return res.status(400).json({
+          success: false,
+          error: `Số lượng trả (${item.qty}) vượt quá số lượng đã nhận thực tế (${originalDone}) của sản phẩm ID ${item.product_tmpl_id || variantId}`
+        });
+      }
+
+      returnMoves.push([0, 0, {
+        name: `Return of ${picking.name}`,
+        product_id: variantId,
+        product_uom_qty: Number(item.qty),
+        product_uom: 1,
+        location_id: picking.location_dest_id[0],
+        location_dest_id: picking.location_id[0]
+      }]);
+
+      creditNoteLines.push([0, 0, {
+        product_id: variantId,
+        quantity: Number(item.qty),
+        price_unit: Number(item.price_unit || 0),
+        name: `Trả hàng từ phiếu ${picking.name}`
+      }]);
+    }
+
+    const pTypes = await odooCall(config, 'stock.picking.type', 'search_read', [], {
+      domain: [['code', '=', 'outgoing']],
+      fields: ['id'],
+      limit: 1
     }, cookie);
-    
-    res.json({ success: true });
+    const pickingTypeId = pTypes[0]?.id || picking.picking_type_id[0];
+
+    const returnPickingId = await odooCall(config, 'stock.picking', 'create', [{
+      partner_id: picking.partner_id[0],
+      picking_type_id: pickingTypeId,
+      location_id: picking.location_dest_id[0],
+      location_dest_id: picking.location_id[0],
+      origin: `Return of ${picking.name}`,
+      move_ids_without_package: returnMoves
+    }], {}, cookie);
+
+    let pickingValidated = false;
+    let pickingWarning = '';
+    try {
+      await validatePickingInternal(config, returnPickingId, cookie);
+      pickingValidated = true;
+    } catch (valErr) {
+      console.warn('Could not auto-validate return picking:', valErr.message);
+      pickingWarning = `Đã tạo phiếu xuất trả nhưng lỗi tự động duyệt: ${valErr.message}.`;
+    }
+
+    let creditNoteId = null;
+    let creditNoteWarning = '';
+    try {
+      creditNoteId = await odooCall(config, 'account.move', 'create', [{
+        move_type: 'in_refund',
+        partner_id: picking.partner_id[0],
+        invoice_origin: picking.name,
+        ref: `Trả hàng cho ${picking.name}`,
+        invoice_line_ids: creditNoteLines
+      }], {}, cookie);
+    } catch (cnErr) {
+      console.warn('Could not create draft credit note:', cnErr.message);
+      creditNoteWarning = `Không thể tự động tạo Credit Note: ${cnErr.message}.`;
+    }
+
+    res.json({
+      success: true,
+      returnPickingId,
+      creditNoteId,
+      pickingValidated,
+      warning: [pickingWarning, creditNoteWarning].filter(Boolean).join(' ') || undefined
+    });
+
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
@@ -636,12 +1020,32 @@ router.post('/odoo/sale-orders', checkRole(['kinh_doanh']), async (req, res) => 
       }]);
     }
     
-    // Create SO
-    const soId = await odooCall(config, 'sale.order', 'create', [{
+    // Create SO Payload
+    const createPayload = {
       partner_id: Number(body.partner_id),
       order_line: resolvedOrderLines
-    }], {}, cookie);
+    };
+    if (body.date_order) {
+      // Format as YYYY-MM-DD HH:mm:ss for Odoo
+      try {
+        const d = new Date(body.date_order);
+        if (!isNaN(d.getTime())) {
+          createPayload.date_order = d.toISOString().replace('T', ' ').substring(0, 19);
+        }
+      } catch (dateErr) {
+        console.warn('Invalid date format provided, using Odoo default:', dateErr.message);
+      }
+    }
     
+    // Create SO
+    const soId = await odooCall(config, 'sale.order', 'create', [createPayload], {}, cookie);
+    
+    // If saving as draft (Báo giá)
+    if (body.draft === true) {
+      return res.json({ success: true, id: soId, state: 'draft', warning: '' });
+    }
+
+    // Otherwise, Confirm flow (Xác nhận)
     // Check inventory before confirming SO
     let canConfirm = true;
     for (const line of body.order_line) {
@@ -665,10 +1069,27 @@ router.post('/odoo/sale-orders', checkRole(['kinh_doanh']), async (req, res) => 
       try {
         await odooCall(config, 'sale.order', 'action_confirm', [[soId]], {}, cookie);
       } catch (confirmErr) {
-        console.warn('SO Confirm skipped or failed', confirmErr.message);
+        console.warn('SO Confirm skipped or failed:', confirmErr.message);
       }
       
-      // Auto generate invoice using the wizard flow
+      // Auto deduct stock (validate picking)
+      let pickingId = null;
+      try {
+        const pickings = await odooCall(config, 'stock.picking', 'search_read', [], {
+          domain: [['sale_id', '=', soId], ['state', 'not in', ['done', 'cancel']]],
+          fields: ['id'],
+          limit: 1
+        }, cookie);
+        if (pickings && pickings.length) {
+          pickingId = pickings[0].id;
+          await validatePickingInternal(config, pickingId, cookie);
+        }
+      } catch (pickingErr) {
+        console.warn('Auto validate picking failed:', pickingErr.message);
+        warningMsg += `Đã xác nhận đơn hàng nhưng lỗi tự động trừ kho: ${pickingErr.message}. `;
+      }
+
+      // Auto generate invoice using the wizard flow (keep as DRAFT)
       try {
         const context = { active_ids: [soId], active_id: soId, active_model: 'sale.order' };
         const wizardId = await odooCall(config, 'sale.advance.payment.inv', 'create', [{
@@ -680,12 +1101,7 @@ router.post('/odoo/sale-orders', checkRole(['kinh_doanh']), async (req, res) => 
         const updatedSO = await odooCall(config, 'sale.order', 'read', [[soId], ['invoice_ids']], {}, cookie);
         if (updatedSO && updatedSO.length && updatedSO[0].invoice_ids && updatedSO[0].invoice_ids.length) {
           invoiceId = updatedSO[0].invoice_ids[0];
-          // Automatically post the invoice to generate the code
-          try {
-            await odooCall(config, 'account.move', 'action_post', [[invoiceId]], {}, cookie);
-          } catch (postErr) {
-            console.warn('Auto action_post failed for wizard-created invoice:', postErr.message);
-          }
+          // CRITICAL: We DO NOT post or register payment automatically for invoices anymore.
         }
       } catch (invoiceErr) {
         console.warn('Invoice wizard auto-create failed, falling back to manual creation:', invoiceErr.message);
@@ -698,22 +1114,23 @@ router.post('/odoo/sale-orders', checkRole(['kinh_doanh']), async (req, res) => 
               invoice_origin: `SO${soId}`,
               invoice_line_ids: invoiceLineIds
             }], {}, cookie);
-            // Automatically post the manual fallback invoice
-            try {
-              await odooCall(config, 'account.move', 'action_post', [[invoiceId]], {}, cookie);
-            } catch (postErr) {
-              console.warn('Auto action_post failed for manual fallback-created invoice:', postErr.message);
-            }
           }
         } catch (manualErr) {
           console.error('Manual invoice creation fallback failed:', manualErr.message);
+          warningMsg += `Không thể tự động sinh Hóa đơn: ${manualErr.message}.`;
         }
       }
     } else {
-      warningMsg = 'Đơn hàng lưu dưới dạng Báo giá (Chờ Sản Xuất) vì thiếu hàng trong kho.';
+      // Insufficient stock: Confirm the SO to place in confirmed state, but leave picking and do not create invoice
+      try {
+        await odooCall(config, 'sale.order', 'action_confirm', [[soId]], {}, cookie);
+      } catch (confirmErr) {
+        console.warn('SO Confirm with low stock failed:', confirmErr.message);
+      }
+      warningMsg = 'Kho không đủ hàng giao, đơn hàng sẽ chuyển sang trạng thái Chờ sản xuất';
     }
     
-    res.json({ success: true, id: soId, invoiceId, warning: warningMsg });
+    res.json({ success: true, id: soId, invoiceId, warning: warningMsg || undefined });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
@@ -737,17 +1154,22 @@ router.post('/odoo/invoices/:id/register-payment', checkRole(['ke_toan_ban_hang'
     const config = loadConfig();
     const cookie = await odooAuth(config);
     const id = Number(req.params.id);
-    const { payment_state, payment_amount, payment_ref, ref } = req.body;
+    const { payment_amount, payment_ref, ref, invoice_state, payment_method, payment_date } = req.body;
 
     const invs = await odooCall(config, 'account.move', 'read', [[id], ['state', 'amount_total', 'amount_residual', 'payment_state']], {}, cookie);
     if (!invs || !invs.length) {
-      return res.status(404).json({ success: false, error: 'Invoice not found' });
+      return res.status(404).json({ success: false, error: 'Không tìm thấy hóa đơn' });
+    }
+    const invoice = invs[0];
+
+    // Validate payment amount limit
+    const amountVal = Number(payment_amount || 0);
+    const alreadyPaid = Number(invoice.amount_total || 0) - Number(invoice.amount_residual || 0);
+    if (amountVal + alreadyPaid > Number(invoice.amount_total || 0)) {
+      return res.status(400).json({ success: false, error: 'Lỗi: Tổng tiền thực thu và tiền đã thanh toán vượt quá tổng giá trị đơn gốc!' });
     }
 
     const writeData = {};
-    if (payment_ref !== undefined) {
-      writeData.payment_reference = payment_ref;
-    }
     if (ref !== undefined) {
       writeData.ref = ref;
     }
@@ -756,25 +1178,92 @@ router.post('/odoo/invoices/:id/register-payment', checkRole(['ke_toan_ban_hang'
       await odooCall(config, 'account.move', 'write', [[id], writeData], {}, cookie);
     }
 
-    const invoice = invs[0];
-    if (payment_state === 'paid' || payment_state === 'partial') {
-      if (invoice.state !== 'posted') {
-        await odooCall(config, 'account.move', 'action_post', [[id]], {}, cookie);
+    // Post invoice if transition is requested
+    if (invoice_state === 'posted' && invoice.state === 'draft') {
+      await odooCall(config, 'account.move', 'action_post', [[id]], {}, cookie);
+      // Re-read residual values after post
+      const updated = await odooCall(config, 'account.move', 'read', [[id], ['state', 'amount_total', 'amount_residual', 'payment_state']], {}, cookie);
+      if (updated && updated.length) {
+        Object.assign(invoice, updated[0]);
+      }
+    }
+
+    // Register payment if amount > 0 and invoice is posted
+    if (amountVal > 0 && invoice.state === 'posted') {
+      let journalId = null;
+      const journalType = payment_method === 'cash' ? 'cash' : 'bank';
+      try {
+        const journals = await odooCall(config, 'account.journal', 'search_read', [], {
+          domain: [['type', '=', journalType]],
+          fields: ['id'],
+          limit: 1
+        }, cookie);
+        if (journals && journals.length) {
+          journalId = journals[0].id;
+        }
+      } catch (jErr) {
+        console.warn('Failed to query payment journal from Odoo:', jErr.message);
       }
 
-      const residual = Number(invoice.amount_residual || 0);
-      const amount = payment_state === 'paid' ? residual : Number(payment_amount || 0);
-      if (amount > 0) {
-        const context = { active_model: 'account.move', active_ids: [id], active_id: id };
-        const wizardId = await odooCall(config, 'account.payment.register', 'create', [{
-          amount,
-          communication: payment_ref || ref || ''
-        }], { context }, cookie);
-        await odooCall(config, 'account.payment.register', 'action_create_payments', [[wizardId]], { context }, cookie);
+      const context = { active_model: 'account.move', active_ids: [id], active_id: id };
+      const registerPayload = {
+        amount: amountVal,
+        communication: payment_ref || ref || ''
+      };
+      if (journalId) {
+        registerPayload.journal_id = journalId;
       }
+      if (payment_date) {
+        registerPayload.payment_date = payment_date;
+      }
+
+      const wizardId = await odooCall(config, 'account.payment.register', 'create', [registerPayload], { context }, cookie);
+      await odooCall(config, 'account.payment.register', 'action_create_payments', [[wizardId]], { context }, cookie);
     }
     
     res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+router.post('/odoo/invoices/:id/credit-note', checkRole(['ke_toan_ban_hang']), async (req, res) => {
+  try {
+    const config = loadConfig();
+    const cookie = await odooAuth(config);
+    const id = Number(req.params.id);
+
+    // Read the original invoice
+    const inv = await odooCall(config, 'account.move', 'read', [[id], ['id', 'name', 'partner_id', 'ref', 'invoice_line_ids']], {}, cookie);
+    if (!inv || !inv.length) {
+      return res.status(404).json({ success: false, error: 'Không tìm thấy hóa đơn gốc' });
+    }
+    const invoice = inv[0];
+
+    // Read the invoice lines
+    let lines = [];
+    if (invoice.invoice_line_ids && invoice.invoice_line_ids.length) {
+      lines = await odooCall(config, 'account.move.line', 'read', [invoice.invoice_line_ids, ['product_id', 'quantity', 'price_unit', 'name']], {}, cookie);
+    }
+
+    const creditNoteLines = lines
+      .filter(l => l.product_id)
+      .map(line => [0, 0, {
+        product_id: line.product_id[0],
+        quantity: Number(line.quantity),
+        price_unit: Number(line.price_unit),
+        name: `Hoàn trả cho hóa đơn ${invoice.name}`
+      }]);
+
+    const creditNoteId = await odooCall(config, 'account.move', 'create', [{
+      move_type: 'out_refund',
+      partner_id: invoice.partner_id[0],
+      invoice_origin: invoice.name,
+      ref: `Hoàn trả hóa đơn ${invoice.name}`,
+      invoice_line_ids: creditNoteLines
+    }], {}, cookie);
+
+    res.json({ success: true, creditNoteId });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
@@ -785,6 +1274,11 @@ router.delete('/odoo/invoices/:id', checkRole(['ke_toan_ban_hang']), async (req,
     const config = loadConfig();
     const cookie = await odooAuth(config);
     const id = Number(req.params.id);
+
+    const invs = await odooCall(config, 'account.move', 'read', [[id], ['state']], {}, cookie);
+    if (invs && invs.length && invs[0].state === 'posted') {
+      return res.status(400).json({ success: false, error: 'Nghiêm cấm xóa hóa đơn đã ở trạng thái Đã vào sổ (Posted). Vui lòng sử dụng Credit Note để hoàn trả.' });
+    }
     
     try {
       // Try to unlink directly (works if in draft status)
@@ -1114,13 +1608,17 @@ router.post('/odoo/production', checkRole(['san_xuat']), async (req, res) => {
       id: Date.now(),
       timestamp: new Date().toISOString(),
       product_id: productId,
+      variant_id: variantId,
       productName: product.name,
       productCode: product.default_code || '',
       qty: yieldQty,
       updatedQty,
       bomSource: bom.source,
       deducted: deductedDetails,
-      status: 'completed'
+      status: 'completed',
+      shift_code: body.shift_code || '',
+      production_date: body.production_date || '',
+      shift: body.shift || ''
     };
     const productionLog = loadProductionLog();
     productionLog.unshift(productionEntry);
@@ -1172,7 +1670,7 @@ router.delete('/odoo/production/:index', checkRole(['san_xuat']), async (req, re
     
     const currentStock = quants.length ? Number(quants[0].quantity || 0) : 0;
     if (currentStock < logItem.qty) {
-      return res.status(400).json({ success: false, error: `Tồn kho thành phẩm hiện tại (${currentStock}) nhỏ hơn số lượng cần hủy (${logItem.qty}). Không thể hủy!` });
+      return res.status(400).json({ success: false, error: 'Thành phẩm đã xuất bán, không thể hủy phiếu sản xuất.' });
     }
     
     // Subtract produced item
@@ -1212,6 +1710,159 @@ router.delete('/odoo/production/:index', checkRole(['san_xuat']), async (req, re
     res.status(500).json({ success: false, error: e.message });
   }
 });
+router.post('/odoo/so/:id/cancel', checkRole(['kinh_doanh']), async (req, res) => {
+  try {
+    const config = loadConfig();
+    const cookie = await odooAuth(config);
+    const soId = Number(req.params.id);
+
+    // 1. Read Sales Order
+    const order = await odooCall(config, 'sale.order', 'read', [[soId], ['id', 'name', 'partner_id', 'state', 'order_line']], {}, cookie);
+    if (!order || !order.length) {
+      return res.status(404).json({ success: false, error: 'Không tìm thấy đơn bán hàng' });
+    }
+    const so = order[0];
+
+    // 2. Fetch all order line details
+    let lines = [];
+    if (so.order_line && so.order_line.length) {
+      lines = await odooCall(config, 'sale.order.line', 'read', [so.order_line, ['product_id', 'product_uom_qty', 'price_unit']], {}, cookie);
+    }
+
+    // 3. Find pickings for this Sales Order
+    const pickings = await odooCall(config, 'stock.picking', 'search_read', [], {
+      domain: [['sale_id', '=', soId]],
+      fields: ['id', 'state']
+    }, cookie);
+
+    // 4. Return items if any picking was done
+    const isPickingDone = pickings.some(p => p.state === 'done');
+    if (isPickingDone && lines.length) {
+      // Find internal stock location
+      const locs = await odooCall(config, 'stock.location', 'search_read', [], {
+        domain: [['usage', '=', 'internal']],
+        fields: ['id', 'name'],
+        limit: 1
+      }, cookie);
+      const locationId = locs[0]?.id;
+      if (locationId) {
+        for (const line of lines) {
+          const variantId = Array.isArray(line.product_id) ? line.product_id[0] : line.product_id;
+          const qty = Number(line.product_uom_qty);
+          if (qty > 0) {
+            // Find or create stock.quant
+            const quants = await odooCall(config, 'stock.quant', 'search_read', [], {
+              domain: [['product_id', '=', variantId], ['location_id', '=', locationId]],
+              fields: ['id', 'quantity']
+            }, cookie);
+            if (quants && quants.length) {
+              const rq = quants[0];
+              const restoredQty = (rq.quantity || 0) + qty;
+              await odooCall(config, 'stock.quant', 'write', [[rq.id], { quantity: restoredQty }], {}, cookie);
+            } else {
+              await odooCall(config, 'stock.quant', 'create', [{
+                product_id: variantId,
+                location_id: locationId,
+                quantity: qty
+              }], {}, cookie);
+            }
+          }
+        }
+      }
+    }
+
+    // 5. Cancel pickings that are not done or cancel
+    for (const p of pickings) {
+      if (p.state !== 'done' && p.state !== 'cancel') {
+        try {
+          await odooCall(config, 'stock.picking', 'write', [[p.id], { state: 'cancel' }], {}, cookie);
+        } catch (pickErr) {
+          console.warn(`Could not cancel picking ${p.id}:`, pickErr.message);
+        }
+      }
+    }
+
+    // 6. Cancel the Sales Order itself
+    await odooCall(config, 'sale.order', 'write', [[soId], { state: 'cancel' }], {}, cookie);
+
+    // 7. Auto generate Credit Note (out_refund)
+    let creditNoteId = null;
+    let creditNoteWarning = '';
+    if (lines.length) {
+      try {
+        const creditNoteLines = lines.map(line => {
+          const variantId = Array.isArray(line.product_id) ? line.product_id[0] : line.product_id;
+          return [0, 0, {
+            product_id: variantId,
+            quantity: Number(line.product_uom_qty),
+            price_unit: Number(line.price_unit || 0),
+            name: `Hủy đơn & Hoàn trả sản phẩm của đơn ${so.name}`
+          }];
+        });
+
+        creditNoteId = await odooCall(config, 'account.move', 'create', [{
+          move_type: 'out_refund',
+          partner_id: so.partner_id[0],
+          invoice_origin: so.name,
+          ref: `Hủy đơn ${so.name}`,
+          invoice_line_ids: creditNoteLines
+        }], {}, cookie);
+      } catch (cnErr) {
+        console.warn('Could not create draft credit note:', cnErr.message);
+        creditNoteWarning = `Lưu ý: Không thể tự động tạo Credit Note trên Odoo: ${cnErr.message}.`;
+      }
+    }
+
+    res.json({
+      success: true,
+      creditNoteId,
+      warning: creditNoteWarning || undefined
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+router.get('/odoo/so/:id', checkRole(['kinh_doanh']), async (req, res) => {
+  try {
+    const config = loadConfig();
+    const cookie = await odooAuth(config);
+    const id = Number(req.params.id);
+    
+    const orders = await odooCall(config, 'sale.order', 'read', [[id], ['id', 'name', 'partner_id', 'amount_total', 'state', 'invoice_ids', 'date_order', 'order_line', 'picking_ids']], {}, cookie);
+    if (!orders || !orders.length) {
+      return res.status(404).json({ success: false, error: 'Không tìm thấy đơn hàng' });
+    }
+    const order = orders[0];
+    
+    let lines = [];
+    if (order.order_line && order.order_line.length) {
+      lines = await odooCall(config, 'sale.order.line', 'read', [order.order_line, ['product_id', 'product_uom_qty', 'price_unit', 'price_subtotal']], {}, cookie);
+    }
+    
+    const data = {
+      id: order.id,
+      name: order.name,
+      partner_id: order.partner_id ? order.partner_id[0] : null,
+      date_order: order.date_order,
+      state: order.state,
+      amount_total: order.amount_total,
+      picking_ids: order.picking_ids || [],
+      order_line: lines.map(l => ({
+        product_id: l.product_id ? l.product_id[0] : null,
+        product_name: l.product_id ? l.product_id[1] : '',
+        product_qty: l.product_uom_qty,
+        price_unit: l.price_unit,
+        price_subtotal: l.price_subtotal
+      }))
+    };
+    
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.get('/odoo/so', checkRole(['kinh_doanh']), async (req, res) => {
   try {
     const config = loadConfig();
@@ -1220,9 +1871,30 @@ router.get('/odoo/so', checkRole(['kinh_doanh']), async (req, res) => {
       domain: [],
       limit: 100,
       order: 'id desc',
-      fields: ['id', 'name', 'partner_id', 'amount_total', 'state', 'invoice_ids', 'write_date']
+      fields: ['id', 'name', 'partner_id', 'amount_total', 'state', 'invoice_ids', 'write_date', 'picking_ids']
     }, cookie);
     
+    // Collect all picking IDs
+    const allPickingIds = [];
+    orders.forEach(o => {
+      if (o.picking_ids && o.picking_ids.length) {
+        allPickingIds.push(...o.picking_ids);
+      }
+    });
+
+    let pickingMap = new Map();
+    if (allPickingIds.length) {
+      try {
+        const pickings = await odooCall(config, 'stock.picking', 'search_read', [], {
+          domain: [['id', 'in', allPickingIds]],
+          fields: ['id', 'state']
+        }, cookie);
+        pickingMap = new Map(pickings.map(p => [p.id, p.state]));
+      } catch (pickErr) {
+        console.warn('Failed to fetch pickings in batch:', pickErr.message);
+      }
+    }
+
     const partners = await odooCall(config, 'res.partner', 'search_read', [], {
       fields: ['id', 'name'],
       limit: 500
@@ -1230,15 +1902,35 @@ router.get('/odoo/so', checkRole(['kinh_doanh']), async (req, res) => {
     
     const partnerMap = new Map(partners.map(p => [p.id, p]));
     
-    const data = orders.map(o => ({
-      id: o.id,
-      name: o.name || '',
-      partner: partnerMap.get(o.partner_id?.[0])?.name || '',
-      amount_total: o.amount_total ?? 0,
-      state: o.state || '',
-      invoice_ids: o.invoice_ids || [],
-      invoice_ref: Array.isArray(o.invoice_ids) && o.invoice_ids.length ? `Invoice: ${o.invoice_ids.join(', ')}` : 'Chưa xuất'
-    }));
+    const data = orders.map(o => {
+      // Determine delivery state
+      let pickingState = '';
+      if (o.picking_ids && o.picking_ids.length) {
+        const states = o.picking_ids.map(id => pickingMap.get(id)).filter(Boolean);
+        if (states.length && states.every(s => s === 'done')) {
+          pickingState = 'done';
+        } else if (states.some(s => s === 'assigned')) {
+          pickingState = 'assigned';
+        } else if (states.some(s => s === 'confirmed' || s === 'waiting')) {
+          pickingState = 'confirmed';
+        } else if (states.includes('cancel')) {
+          pickingState = 'cancel';
+        } else {
+          pickingState = states[0] || '';
+        }
+      }
+
+      return {
+        id: o.id,
+        name: o.name || '',
+        partner: partnerMap.get(o.partner_id?.[0])?.name || '',
+        amount_total: o.amount_total ?? 0,
+        state: o.state || '',
+        delivery_state: pickingState,
+        invoice_ids: o.invoice_ids || [],
+        invoice_ref: Array.isArray(o.invoice_ids) && o.invoice_ids.length ? `Invoice: ${o.invoice_ids.join(', ')}` : 'Chưa xuất'
+      };
+    });
     
     res.json(data);
   } catch (e) {
@@ -1303,7 +1995,7 @@ router.get('/odoo/invoices', checkRole(['ke_toan_ban_hang']), async (req, res) =
       domain: [['move_type', '=', 'out_invoice']],
       limit: 100,
       order: 'id desc',
-      fields: ['id', 'name', 'partner_id', 'amount_total', 'amount_residual', 'payment_state', 'state', 'invoice_date', 'write_date', 'ref', 'payment_reference']
+      fields: ['id', 'name', 'partner_id', 'amount_total', 'amount_residual', 'payment_state', 'state', 'invoice_date', 'write_date', 'ref', 'payment_reference', 'invoice_origin']
     }, cookie);
     
     const partners = await odooCall(config, 'res.partner', 'search_read', [], {
@@ -1317,6 +2009,7 @@ router.get('/odoo/invoices', checkRole(['ke_toan_ban_hang']), async (req, res) =
       id: i.id,
       invoice_number: i.name || '',
       partner: partnerMap.get(i.partner_id?.[0])?.name || '',
+      partner_id: i.partner_id?.[0] || null,
       amount_total: i.amount_total ?? 0,
       amount_residual: i.amount_residual ?? 0,
       payment_state: i.payment_state || '',
@@ -1324,7 +2017,8 @@ router.get('/odoo/invoices', checkRole(['ke_toan_ban_hang']), async (req, res) =
       invoice_date: i.invoice_date || '',
       write_date: i.write_date || '',
       ref: i.ref || '',
-      payment_ref: i.payment_reference || ''
+      payment_ref: i.payment_reference || '',
+      invoice_origin: i.invoice_origin || ''
     }));
     
     res.json(data);
@@ -1448,20 +2142,29 @@ router.get('/odoo/receipts/:id', checkRole(['ke_toan_kho']), async (req, res) =>
 // SSE Real-time child process runner
 router.get('/run-script/stream', checkRole([]), (req, res) => {
   const scriptName = req.query.script;
-  const validScripts = [
-    'odoo_gsheet_bidirectional_sync.js',
-    'fix_duplicates_and_combos.js',
-    'fix_odoo_products_utf8.js',
-    'odoo_process_stock_receipts.js',
-    'odoo_e2e_workflow_test.js',
-    'odoo_create_sample_orders_test.js',
-    'odoo_create_sample_purchase_and_receipt_test.js',
-    'odoo_create_invoice_ab.js',
-    'odoo_sync_production.js'
-  ];
+  const scriptMapping = {
+    // Old script names
+    'odoo_gsheet_bidirectional_sync.js': 'sync_data.js',
+    'fix_odoo_products_utf8.js': 'products.js',
+    'fix_duplicates_and_combos.js': 'products.js',
+    'odoo_process_stock_receipts.js': 'recepts.js',
+    'odoo_e2e_workflow_test.js': 'invoice.js',
+    'odoo_create_sample_orders_test.js': 'invoice.js',
+    'odoo_create_sample_purchase_and_receipt_test.js': 'recepts.js',
+    'odoo_create_invoice_ab.js': 'invoice.js',
+    'odoo_sync_production.js': 'production.js',
 
-  if (!validScripts.includes(scriptName)) {
-    return res.status(400).json({ error: 'Invalid script name' });
+    // New script names
+    'sync_data.js': 'sync_data.js',
+    'products.js': 'products.js',
+    'recepts.js': 'recepts.js',
+    'invoice.js': 'invoice.js',
+    'production.js': 'production.js'
+  };
+
+  const actualScript = scriptMapping[scriptName];
+  if (!actualScript) {
+    return res.status(400).json({ error: 'Invalid script name: ' + scriptName });
   }
 
   res.setHeader('Content-Type', 'text/event-stream');
@@ -1497,9 +2200,9 @@ router.get('/run-script/stream', checkRole([]), (req, res) => {
     GOOGLE_CREDENTIALS: path.resolve(credsPath)
   };
 
-  res.write(`data: [SYSTEM] Spawning process: ${process.execPath} ${scriptName}...\n\n`);
+  res.write(`data: [SYSTEM] Spawning process: ${process.execPath} ${actualScript}...\n\n`);
 
-  const child = spawn(process.execPath, [scriptName], { env, cwd: path.join(__dirname, '../../scripts') });
+  const child = spawn(process.execPath, [actualScript], { env, cwd: path.join(__dirname, '../../scripts') });
 
   child.stdout.on('data', (data) => {
     const lines = data.toString().split('\n');

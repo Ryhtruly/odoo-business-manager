@@ -49,6 +49,7 @@ async function getOdooBomLines(config, cookie, product, variantId) {
         const rawVariantId = Array.isArray(line.product_id) ? line.product_id[0] : line.product_id;
         const raw = rawMap.get(rawVariantId) || {};
         return {
+          productId: rawVariantId,
           variantId: rawVariantId,
           name: raw.name || (Array.isArray(line.product_id) ? line.product_id[1] : ''),
           code: raw.default_code || '',
@@ -81,6 +82,7 @@ async function getLocalBomLines(config, cookie, product) {
       const raw = rawMap.get(line.code) || {};
       const variantId = Array.isArray(raw.product_variant_id) ? raw.product_variant_id[0] : raw.product_variant_id;
       return {
+        productId: variantId,
         variantId,
         name: raw.name || line.code,
         code: line.code,
