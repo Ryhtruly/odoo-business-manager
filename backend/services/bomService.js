@@ -80,7 +80,9 @@ async function getLocalBomLines(config, cookie, product) {
     source: 'local_bom_config',
     lines: lines.map(line => {
       const raw = rawMap.get(line.code) || {};
-      const variantId = Array.isArray(raw.product_variant_id) ? raw.product_variant_id[0] : raw.product_variant_id;
+      const variantId = raw.product_variant_id
+        ? (Array.isArray(raw.product_variant_id) ? raw.product_variant_id[0] : raw.product_variant_id)
+        : null;
       return {
         productId: variantId,
         variantId,

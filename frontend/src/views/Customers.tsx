@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import Button from '../components/common/Button';
 import Modal from '../components/common/Modal';
+import TableToolbar from '../components/common/TableToolbar';
+import PartnerTable from '../components/common/PartnerTable';
 
 export const Customers: React.FC = () => {
   const {
@@ -203,141 +205,42 @@ export const Customers: React.FC = () => {
       <div className="glass-panel datatable-container">
         <div className="table-header">
           <h2>Danh Sách Khách Hàng </h2>
-          <div className="table-actions" style={{ flex: 1 }}>
-            <input
-              type="text"
-              className="form-input search-input"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Tìm kiếm khách hàng..."
-            />
-            <select
-              value={sortOption}
-              onChange={(e) => setSortOption(e.target.value)}
-              className="form-input"
-              style={{ padding: '8px' }}
-            >
-              <option value="name_asc">Sắp xếp: Tên (A-Z)</option>
-              <option value="name_desc">Sắp xếp: Tên (Z-A)</option>
-              <option value="id_asc">Sắp xếp: Cũ nhất</option>
-              <option value="id_desc">Sắp xếp: Mới nhất</option>
-            </select>
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
-              {isAllowedToManage && (
-                <Button variant="primary" onClick={handleOpenCreate}>
-                  Thêm Khách Hàng
-                </Button>
-              )}
-              <Button variant="secondary" onClick={fetchCustomers}>
-                Tải Lại
+          <TableToolbar
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            searchPlaceholder="Tìm kiếm khách hàng..."
+            sortOption={sortOption}
+            onSortChange={setSortOption}
+            sortOptions={[
+              { value: 'name_asc', label: 'Sắp xếp: Tên (A-Z)' },
+              { value: 'name_desc', label: 'Sắp xếp: Tên (Z-A)' },
+              { value: 'id_asc', label: 'Sắp xếp: Cũ nhất' },
+              { value: 'id_desc', label: 'Sắp xếp: Mới nhất' }
+            ]}
+          >
+            {isAllowedToManage && (
+              <Button variant="primary" onClick={handleOpenCreate}>
+                Thêm Khách Hàng
               </Button>
-            </div>
-          </div>
+            )}
+            <Button variant="secondary" onClick={fetchCustomers}>
+              Tải Lại
+            </Button>
+          </TableToolbar>
         </div>
-        
-        <div className="responsive-table-wrapper">
-          <table>
-            <thead>
-              <tr>
-                <th>Tên khách hàng</th>
-                <th>Địa chỉ</th>
-                <th>Số điện thoại</th>
-                <th>Công nợ (đ)</th>
-                <th>Trạng thái</th>
-                {isAllowedToManage && <th style={{ width: '150px', textAlign: 'center' }}>Thao tác</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {(loading.customers && cache.customers.length === 0) ? (
-                <tr>
-                  <td colSpan={6} className="text-center">Đang tải dữ liệu...</td>
-                </tr>
-              ) : filteredCustomers.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="text-center">Không tìm thấy khách hàng nào.</td>
-                </tr>
-              ) : (
-                filteredCustomers.map((c) => {
-                  const statusBadge = c.active ? (
-                    <span style={{ background: 'rgba(46, 204, 113, 0.1)', color: '#2ecc71', border: '1px solid rgba(46, 204, 113, 0.2)', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 500, display: 'inline-block' }}>
-                      Đang hợp tác
-                    </span>
-                  ) : (
-                    <span style={{ background: 'rgba(231, 76, 60, 0.1)', color: '#e74c3c', border: '1px solid rgba(231, 76, 60, 0.2)', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 500, display: 'inline-block' }}>
-                      Ngừng hợp tác
-                    </span>
-                  );
 
-                  const debtColor = c.debit > 0 ? 'var(--accent-danger)' : 'var(--text-muted)';
-                  const debtWeight = c.debit > 0 ? '600' : 'normal';
-
-                  return (
-                    <tr key={c.id}>
-                      <td><strong>{c.name}</strong></td>
-                      <td>{c.street || '-'}</td>
-                      <td>{c.phone || '-'}</td>
-                      <td>
-                        <span style={{ fontWeight: debtWeight, color: debtColor }}>
-                          {Number(c.debit || 0).toLocaleString()} đ
-                        </span>
-                      </td>
-                      <td>{statusBadge}</td>
-                      {isAllowedToManage && (
-                        <td style={{ textAlign: 'center' }}>
-                          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              onClick={() => handleOpenEdit(c)}
-                              style={{ padding: '4px 8px', fontSize: '0.8rem', margin: 0, minHeight: 'unset', lineHeight: 1 }}
-                            >
-                              Sửa
-                            </Button>
-                            {c.active ? (
-                              <Button
-                                size="sm"
-                                variant={c.has_transactions ? 'secondary' : 'danger'}
-                                onClick={() => handleDeleteOrArchive(c)}
-                                style={{
-                                  padding: '4px 8px',
-                                  fontSize: '0.8rem',
-                                  margin: 0,
-                                  minHeight: 'unset',
-                                  lineHeight: 1,
-                                  ...(c.has_transactions ? { background: 'rgba(230, 126, 34, 0.1)', color: '#e67e22', borderColor: 'rgba(230,126,34,0.2)' } : {})
-                                }}
-                              >
-                                {c.has_transactions ? 'Lưu trữ' : 'Xóa'}
-                              </Button>
-                            ) : (
-                              <Button
-                                size="sm"
-                                variant="primary"
-                                onClick={() => handleRestoreCooperation(c)}
-                                style={{
-                                  padding: '4px 8px',
-                                  fontSize: '0.8rem',
-                                  margin: 0,
-                                  minHeight: 'unset',
-                                  lineHeight: 1,
-                                  background: 'rgba(46, 204, 113, 0.1)',
-                                  color: '#2ecc71',
-                                  borderColor: 'rgba(46, 204, 113, 0.2)'
-                                }}
-                              >
-                                Hợp tác lại
-                              </Button>
-                            )}
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+        <PartnerTable
+          data={filteredCustomers}
+          isLoading={loading.customers}
+          isAllowedToManage={isAllowedToManage}
+          nameHeader="Tên khách hàng"
+          emptyMessage="Không tìm thấy khách hàng nào."
+          debitOrCreditField="debit"
+          showDebt={false}
+          onEdit={handleOpenEdit}
+          onDeleteOrArchive={handleDeleteOrArchive}
+          onRestore={handleRestoreCooperation}
+        />
       </div>
 
       {/* Customer Create/Edit Modal */}

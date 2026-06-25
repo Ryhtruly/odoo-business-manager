@@ -21,8 +21,37 @@ export const Sales: React.FC = () => {
     fetchProducts
   } = useApp();
 
+  const getStockForProduct = (productId: number): number => {
+    const product = cache.products.find(p => p.id === productId);
+    return product ? Number(product.qty_available ?? 0) : 0;
+  };
+
+  const checkStockSufficient = (lines: SOLine[]): { 
+    sufficient: boolean; 
+    details: Array<{ product_name: string; needed: number; available: number; shortage: number }> 
+  } => {
+    const details = lines.map(line => {
+      const product = cache.products.find(p => p.id === line.product_id);
+      const available = getStockForProduct(line.product_id);
+      const needed = line.product_qty;
+      const shortage = Math.max(0, needed - available);
+      return {
+        product_name: product?.name || `#${line.product_id}`,
+        needed,
+        available,
+        shortage
+      };
+    });
+    const sufficient = details.every(d => d.shortage === 0);
+    return { sufficient, details };
+  };
+
   // Active loaded SO ID
   const [currentSOId, setCurrentSOId] = useState<number | null>(null);
+  const [filterSearch, setFilterSearch] = useState<string>('');
+  const [filterState, setFilterState] = useState<string>('all');
+  const [filterStartDate, setFilterStartDate] = useState<string>('');
+  const [filterEndDate, setFilterEndDate] = useState<string>('');
   const [currentSOCode, setCurrentSOCode] = useState<string>('SO-2026-XXXX');
 
   // Form Fields
@@ -172,17 +201,14 @@ export const Sales: React.FC = () => {
 
     // Stock check for confirmation
     if (!isDraft) {
-      let isSufficient = true;
-      for (const line of currentSOLines) {
-        const cachedProduct = cache.products.find(p => p.id === line.product_id);
-        const stockQty = cachedProduct ? (cachedProduct.qty_available ?? 0) : 0;
-        if (line.product_qty > stockQty) {
-          isSufficient = false;
-          break;
-        }
-      }
-      if (!isSufficient) {
-        if (!confirm('Kho không đủ hàng giao, đơn hàng sẽ chuyển sang trạng thái Chờ sản xuất. Bạn có chắc chắn muốn tiếp tục?')) {
+      const { sufficient, details } = checkStockSufficient(currentSOLines);
+      if (!sufficient) {
+        const shortages = details
+          .filter(d => d.shortage > 0)
+          .map(d => `- ${d.product_name}: Cần ${d.needed}, Có sẵn ${d.available} (Thiếu ${d.shortage})`)
+          .join('\n');
+        
+        if (!confirm(`Đơn hàng có sản phẩm không đủ tồn kho:\n${shortages}\n\nĐơn hàng sẽ chuyển sang trạng thái Chờ sản xuất. Bạn có chắc chắn muốn tiếp tục?`)) {
           return;
         }
       }
@@ -254,6 +280,38 @@ export const Sales: React.FC = () => {
       showToast(`Lỗi kết nối: ${err.message}`, 'danger');
     } finally {
       setIsCanceling(false);
+    }
+  };
+
+  const handleDeleteSO = async (id: number, code: string, state: string) => {
+    const isDoneOrSale = state === 'sale' || state === 'done';
+    const isAdmin = session?.user?.role === 'admin';
+    
+    let confirmMsg = `Bạn có chắc chắn muốn xóa đơn hàng ${code}?`;
+    if (isDoneOrSale) {
+      if (!isAdmin) {
+        alert('Không thể xóa đơn đã hoàn thành/xác nhận. Vui lòng hủy đơn trước.');
+        return;
+      }
+      confirmMsg = `Đơn hàng ${code} đã xác nhận/hoàn thành. Xóa đơn này sẽ KHÔNG hoàn lại tồn kho. Bạn có chắc chắn muốn FORCE xóa?`;
+    }
+
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      showToast('Đang xóa đơn hàng...', 'info');
+      const url = `/api/odoo/so/${id}${isDoneOrSale && isAdmin ? '?force=true' : ''}`;
+      const res = await fetch(url, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message || 'Đã xóa đơn hàng thành công!', 'success');
+        resetForm();
+        fetchSO();
+      } else {
+        showToast(`Lỗi: ${data.error}`, 'danger');
+      }
+    } catch (err: any) {
+      showToast(`Lỗi hệ thống: ${err.message}`, 'danger');
     }
   };
 
@@ -370,7 +428,12 @@ export const Sales: React.FC = () => {
             <h4 style={{ marginTop: 0, marginBottom: '8px', fontSize: '0.9rem', fontWeight: 600 }}>Thêm Dòng Sản Phẩm Đặt Hàng</h4>
             <div className="form-grid" style={{ gridTemplateColumns: '2fr 1fr 1.2fr auto', gap: '12px', marginBottom: 0, alignItems: 'flex-end' }}>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label htmlFor="salesProduct">Sản Phẩm Đặt Hàng:</label>
+                <label htmlFor="salesProduct">
+                  Sản Phẩm Đặt Hàng: {salesProduct && (() => {
+                    const qty = getStockForProduct(Number(salesProduct));
+                    return <span style={{ color: qty > 0 ? '#2ecc71' : '#e74c3c', fontWeight: 'bold', marginLeft: '6px' }}>(Còn tồn: {qty})</span>;
+                  })()}
+                </label>
                 <select
                   id="salesProduct"
                   className="form-input"
@@ -381,7 +444,7 @@ export const Sales: React.FC = () => {
                 >
                   <option value="">-- Chọn Sản Phẩm --</option>
                   {saleProducts.map(p => (
-                    <option key={p.id} value={p.id}>[{p.default_code || 'Không SKU'}] {p.name}</option>
+                    <option key={p.id} value={p.id}>[{p.default_code || 'Không SKU'}] {p.name} (Tồn: {p.qty_available ?? 0})</option>
                   ))}
                 </select>
               </div>
@@ -447,7 +510,20 @@ export const Sales: React.FC = () => {
                     const lineTotal = line.product_qty * line.price_unit;
                     return (
                       <tr key={idx} style={{ borderBottom: '1px solid rgba(0, 0, 0, 0.05)' }}>
-                        <td style={{ padding: '8px 6px' }}><strong>{line.product_name}</strong></td>
+                        <td style={{ padding: '8px 6px' }}>
+                          <strong>{line.product_name}</strong>
+                          {(() => {
+                            const available = getStockForProduct(line.product_id);
+                            if (line.product_qty > available) {
+                              return (
+                                <span className="text-danger" style={{ display: 'block', fontSize: '0.8rem', marginTop: '2px' }}>
+                                  ⚠️ Thiếu hàng (Cần: {line.product_qty}, Có sẵn: {available})
+                                </span>
+                              );
+                            }
+                            return null;
+                          })()}
+                        </td>
                         <td style={{ padding: '8px 6px', textAlign: 'right', width: '110px' }}>
                           <input
                             type="number"
@@ -560,32 +636,144 @@ export const Sales: React.FC = () => {
       </div>
 
       <div className="glass-panel datatable-container">
-        <div className="table-header">
-          <h2>Lịch Sử Đơn Bán Hàng (Sales Orders)</h2>
-          <Button variant="secondary" size="sm" onClick={fetchSO}>Tải Lại</Button>
+        <div className="table-header" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2>Lịch Sử Đơn Bán Hàng (Sales Orders)</h2>
+            <Button variant="secondary" size="sm" onClick={fetchSO}>Tải Lại</Button>
+          </div>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="Tìm theo số SO hoặc tên khách hàng..."
+              value={filterSearch}
+              onChange={(e) => setFilterSearch(e.target.value)}
+              style={{ flex: '2 1 200px', height: '36px', fontSize: '0.9rem' }}
+            />
+            <select
+              className="form-input"
+              value={filterState}
+              onChange={(e) => setFilterState(e.target.value)}
+              style={{ flex: '1 1 150px', height: '36px', padding: '0 8px', fontSize: '0.9rem' }}
+            >
+              <option value="all">-- Tất cả trạng thái --</option>
+              <option value="draft">Nháp (Draft)</option>
+              <option value="sale">Đã xác nhận (Sale)</option>
+              <option value="done">Hoàn thành (Done)</option>
+              <option value="cancel">Đã hủy (Cancel)</option>
+            </select>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <span className="text-muted" style={{ fontSize: '0.85rem' }}>Từ:</span>
+              <input
+                type="date"
+                value={filterStartDate}
+                onChange={(e) => setFilterStartDate(e.target.value)}
+                className="form-input"
+                style={{ padding: '6px', width: '125px', height: '36px' }}
+              />
+              <span className="text-muted" style={{ fontSize: '0.85rem' }}>Đến:</span>
+              <input
+                type="date"
+                value={filterEndDate}
+                onChange={(e) => setFilterEndDate(e.target.value)}
+                className="form-input"
+                style={{ padding: '6px', width: '125px', height: '36px' }}
+              />
+              {(filterSearch || filterState !== 'all' || filterStartDate || filterEndDate) && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setFilterSearch('');
+                    setFilterState('all');
+                    setFilterStartDate('');
+                    setFilterEndDate('');
+                  }}
+                  style={{ padding: '6px 10px', fontSize: '0.8rem', height: '36px', display: 'inline-flex', alignItems: 'center' }}
+                >
+                  Bỏ lọc
+                </Button>
+              )}
+            </div>
+          </div>
         </div>
         <div className="responsive-table-wrapper">
           <table>
             <thead>
               <tr>
                 <th>Số SO</th>
+                <th>Ngày đặt</th>
                 <th>Khách hàng</th>
                 <th>Tổng tiền đơn hàng</th>
                 <th>Trạng thái Odoo</th>
                 <th>Hóa đơn liên kết</th>
+                <th style={{ textAlign: 'center' }}>Thao tác</th>
               </tr>
             </thead>
             <tbody>
-              {(loading.so && cache.so.length === 0) ? (
-                <tr>
-                  <td colSpan={5} className="text-center">Đang tải danh sách đơn hàng...</td>
-                </tr>
-              ) : cache.so.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="text-center">Không tìm thấy đơn bán hàng nào.</td>
-                </tr>
-              ) : (
-                cache.so.map((o) => {
+              {(() => {
+                const filteredSO = cache.so.filter(o => {
+                  const nameMatch = (o.name || '').toLowerCase().includes(filterSearch.toLowerCase());
+                  const partnerMatch = (o.partner || '').toLowerCase().includes(filterSearch.toLowerCase());
+                  const searchOk = nameMatch || partnerMatch;
+                  
+                  let stateOk = true;
+                  if (filterState !== 'all') {
+                    stateOk = o.state === filterState;
+                  }
+
+                  let dateOk = true;
+                  if (filterStartDate || filterEndDate) {
+                    if (o.date_order) {
+                      const orderDateObj = new Date(o.date_order);
+                      orderDateObj.setHours(0, 0, 0, 0);
+
+                      if (filterStartDate) {
+                        const startDateObj = new Date(filterStartDate);
+                        startDateObj.setHours(0, 0, 0, 0);
+                        if (orderDateObj < startDateObj) dateOk = false;
+                      }
+                      if (filterEndDate) {
+                        const endDateObj = new Date(filterEndDate);
+                        endDateObj.setHours(0, 0, 0, 0);
+                        if (orderDateObj > endDateObj) dateOk = false;
+                      }
+                    } else {
+                      dateOk = false;
+                    }
+                  }
+
+                  return searchOk && stateOk && dateOk;
+                });
+
+                if (loading.so && cache.so.length === 0) {
+                  return (
+                    <tr>
+                      <td colSpan={7} className="text-center">Đang tải danh sách đơn hàng...</td>
+                    </tr>
+                  );
+                }
+
+                if (filteredSO.length === 0) {
+                  return (
+                    <tr>
+                      <td colSpan={7} className="text-center">Không tìm thấy đơn bán hàng nào phù hợp bộ lọc.</td>
+                    </tr>
+                  );
+                }
+
+                const formatOrderDate = (dateStr?: string) => {
+                  if (!dateStr) return 'N/A';
+                  try {
+                    const d = new Date(dateStr);
+                    if (isNaN(d.getTime())) return dateStr;
+                    return d.toLocaleString('vi-VN', { hour12: false });
+                  } catch {
+                    return dateStr;
+                  }
+                };
+
+                return filteredSO.map((o) => {
                   const total = o.amount_total ? Number(o.amount_total).toLocaleString() + ' đ' : '0 đ';
                   let stateLabel = '';
                   let badgeClass = 'text-warning';
@@ -625,7 +813,25 @@ export const Sales: React.FC = () => {
                           {o.name || '-'}
                         </strong>
                       </td>
-                      <td>{o.partner || 'N/A'}</td>
+                      <td>
+                        <span style={{ fontSize: '0.85rem' }}>{formatOrderDate(o.date_order)}</span>
+                      </td>
+                      <td>
+                        {(() => {
+                          const partner = o.partner 
+                            ? { name: o.partner, phone: o.partner_phone }
+                            : cache.customers.find(c => c.id === o.partner_id);
+                          
+                          if (!partner) return <span className="text-muted">N/A</span>;
+                          
+                          return (
+                            <div title={partner.phone || ''}>
+                              <strong>{partner.name}</strong>
+                              {partner.phone && <small className="text-muted" style={{ display: 'block' }}>{partner.phone}</small>}
+                            </div>
+                          );
+                        })()}
+                      </td>
                       <td><strong>{total}</strong></td>
                       <td><span className={`badge ${badgeClass}`}>{stateLabel}</span></td>
                       <td onClick={(e) => e.stopPropagation()}>
@@ -654,10 +860,28 @@ export const Sales: React.FC = () => {
                           </a>
                         )}
                       </td>
+                      <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          onClick={() => handleDeleteSO(o.id, o.name || `SO-${o.id}`, o.state)}
+                          style={{
+                            margin: 0,
+                            padding: '2px 6px',
+                            fontSize: '0.75rem',
+                            minHeight: 'unset',
+                            color: 'var(--accent-danger)',
+                            background: 'rgba(239, 68, 68, 0.1)',
+                            borderColor: 'rgba(239, 68, 68, 0.2)'
+                          }}
+                        >
+                          Xóa
+                        </Button>
+                      </td>
                     </tr>
                   );
-                })
-              )}
+                });
+              })()}
             </tbody>
           </table>
         </div>

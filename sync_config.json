@@ -1,8 +1,8 @@
 {
-  "odooUrl": "https://quanly-san-xuat.odoo.com",
-  "db": "quanly-san-xuat",
-  "login": "vanquyen607@gmail.com",
-  "password": "123456789@Quyen",
+  "odooUrl": "https://hoabinh.odoo.com",
+  "db": "hoabinh",
+  "login": "lanhuong04011643@gmail.com",
+  "password": "123456789",
   "sheetId": "1Jzw_V9e4Gfw1QKr11YIa9SVLqaLwvD8cH7dZ7HgWGYE",
   "credsContent": ""
 }

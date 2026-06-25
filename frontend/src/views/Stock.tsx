@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import Button from '../components/common/Button';
+import TableToolbar from '../components/common/TableToolbar';
 
 export const Stock: React.FC = () => {
   const {
@@ -32,29 +33,21 @@ export const Stock: React.FC = () => {
   };
 
   const getCustomProductType = (p: any): string => {
-    if (!p) return 'consu';
-    if (p.type === 'service') return 'service';
-    if (p.type === 'combo') return 'combo';
+    if (!p) return 'trading';
     if (p.purchase_ok && !p.sale_ok) return 'raw_material';
     if (!p.purchase_ok && p.sale_ok) return 'manufactured';
-    if (p.purchase_ok && p.sale_ok) return 'trading';
-    return p.type || 'consu';
+    return 'trading';
   };
 
   const getProductTypeBadge = (customType: string) => {
     switch (customType) {
       case 'raw_material':
-        return <span style={{ background: 'rgba(52, 152, 219, 0.15)', color: '#3498db', border: '1px solid rgba(52, 152, 219, 0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 500, fontSize: '0.8rem' }}>Nguyên liệu</span>;
+        return <span style={{ background: 'rgba(52, 152, 219, 0.15)', color: '#3498db', border: '1px solid rgba(52, 152, 219, 0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 500, fontSize: '0.8rem' }}>Nguyên vật liệu</span>;
       case 'manufactured':
-        return <span style={{ background: 'rgba(46, 204, 113, 0.15)', color: '#2ecc71', border: '1px solid rgba(46, 204, 113, 0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 500, fontSize: '0.8rem' }}>Tự làm</span>;
+        return <span style={{ background: 'rgba(46, 204, 113, 0.15)', color: '#2ecc71', border: '1px solid rgba(46, 204, 113, 0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 500, fontSize: '0.8rem' }}>Thành phẩm</span>;
       case 'trading':
-        return <span style={{ background: 'rgba(155, 89, 182, 0.15)', color: '#9b59b6', border: '1px solid rgba(155, 89, 182, 0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 500, fontSize: '0.8rem' }}>Thương mại</span>;
-      case 'service':
-        return <span style={{ background: 'rgba(241, 196, 15, 0.15)', color: '#f1c40f', border: '1px solid rgba(241, 196, 15, 0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 500, fontSize: '0.8rem' }}>Dịch vụ</span>;
-      case 'combo':
-        return <span style={{ background: 'rgba(230, 126, 34, 0.15)', color: '#e67e22', border: '1px solid rgba(230, 126, 34, 0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 500, fontSize: '0.8rem' }}>Combo</span>;
       default:
-        return <span style={{ background: 'rgba(149, 165, 166, 0.15)', color: '#95a5a6', border: '1px solid rgba(149, 165, 166, 0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 500, fontSize: '0.8rem' }}>Lưu kho</span>;
+        return <span style={{ background: 'rgba(155, 89, 182, 0.15)', color: '#9b59b6', border: '1px solid rgba(155, 89, 182, 0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 500, fontSize: '0.8rem' }}>Hàng hóa thương mại</span>;
     }
   };
 
@@ -65,15 +58,12 @@ export const Stock: React.FC = () => {
       const codeMatch = s.product_code ? removeVietnameseTones(s.product_code).toLowerCase().includes(query) : false;
       const matchesSearch = nameMatch || codeMatch;
 
+      const prod = getProductInfo(s.product_code, s.product_name);
+      if (!prod) return false;
+
       let matchesType = true;
       if (filterType !== 'all') {
-        const prod = getProductInfo(s.product_code, s.product_name);
-        if (filterType === 'product') {
-          const type = prod ? prod.type : 'consu';
-          matchesType = type === 'product' || type === 'consu';
-        } else {
-          matchesType = getCustomProductType(prod) === filterType;
-        }
+        matchesType = getCustomProductType(prod) === filterType;
       }
       return matchesSearch && matchesType;
     })
@@ -102,43 +92,31 @@ export const Stock: React.FC = () => {
       <div className="glass-panel datatable-container">
         <div className="table-header">
           <h2>Chi Tiết Số Lượng Tồn Kho</h2>
-          <div className="table-actions" style={{ flex: 1 }}>
-            <input
-              type="text"
-              className="form-input search-input"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Tìm sản phẩm..."
-            />
-            <select
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value)}
-              className="form-input"
-              style={{ padding: '8px' }}
-            >
-              <option value="all">Tất cả phân loại</option>
-              <option value="product">Lưu kho</option>
-              <option value="service">Dịch vụ</option>
-              <option value="combo">Combo</option>
-              <option value="raw_material">Nguyên liệu</option>
-              <option value="manufactured">Tự làm</option>
-              <option value="trading">Thương mại</option>
-            </select>
-            <select
-              value={sortOption}
-              onChange={(e) => setSortOption(e.target.value)}
-              className="form-input"
-              style={{ padding: '8px' }}
-            >
-              <option value="name_asc">Sắp xếp: Tên (A-Z)</option>
-              <option value="name_desc">Sắp xếp: Tên (Z-A)</option>
-              <option value="stock_desc">Sắp xếp: Tồn kho (Nhiều - Ít)</option>
-              <option value="stock_asc">Sắp xếp: Tồn kho (Ít - Nhiều)</option>
-            </select>
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
-              <Button variant="secondary" onClick={() => { fetchStock(); fetchProducts(); }}>Tải Lại</Button>
-            </div>
-          </div>
+          <TableToolbar
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            searchPlaceholder="Tìm sản phẩm..."
+            filterValue={filterType}
+            onFilterChange={setFilterType}
+            filterOptions={[
+              { value: 'all', label: 'Tất cả phân loại' },
+              { value: 'raw_material', label: 'Nguyên vật liệu' },
+              { value: 'trading', label: 'Hàng hóa thương mại' },
+              { value: 'manufactured', label: 'Thành phẩm' }
+            ]}
+            sortOption={sortOption}
+            onSortChange={setSortOption}
+            sortOptions={[
+              { value: 'name_asc', label: 'Sắp xếp: Tên (A-Z)' },
+              { value: 'name_desc', label: 'Sắp xếp: Tên (Z-A)' },
+              { value: 'stock_desc', label: 'Sắp xếp: Tồn kho (Nhiều - Ít)' },
+              { value: 'stock_asc', label: 'Sắp xếp: Tồn kho (Ít - Nhiều)' }
+            ]}
+          >
+            <Button variant="secondary" onClick={() => { fetchStock(); fetchProducts(); }}>
+              Tải Lại
+            </Button>
+          </TableToolbar>
         </div>
         
         <div className="responsive-table-wrapper">

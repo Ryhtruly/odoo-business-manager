@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import Button from '../components/common/Button';
 import Modal from '../components/common/Modal';
+import TableToolbar from '../components/common/TableToolbar';
 
 export const Products: React.FC = () => {
   const {
@@ -44,34 +45,26 @@ export const Products: React.FC = () => {
   }, []);
 
   const getCustomProductType = (p: any): string => {
-    if (p.type === 'service') return 'service';
-    if (p.type === 'combo') return 'combo';
+    if (!p) return 'trading';
     if (p.purchase_ok && !p.sale_ok) return 'raw_material';
     if (!p.purchase_ok && p.sale_ok) return 'manufactured';
-    if (p.purchase_ok && p.sale_ok) return 'trading';
-    return p.type || 'consu';
+    return 'trading';
   };
 
   const getProductTypeBadge = (customType: string) => {
     switch (customType) {
       case 'raw_material':
-        return <span className="badge badge-raw" style={{ background: 'rgba(52, 152, 219, 0.15)', color: '#3498db', border: '1px solid rgba(52, 152, 219, 0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 500, fontSize: '0.8rem' }}>Nguyên liệu</span>;
+        return <span className="badge badge-raw" style={{ background: 'rgba(52, 152, 219, 0.15)', color: '#3498db', border: '1px solid rgba(52, 152, 219, 0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 500, fontSize: '0.8rem' }}>Nguyên vật liệu</span>;
       case 'manufactured':
-        return <span className="badge badge-manufactured" style={{ background: 'rgba(46, 204, 113, 0.15)', color: '#2ecc71', border: '1px solid rgba(46, 204, 113, 0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 500, fontSize: '0.8rem' }}>Tự làm</span>;
+        return <span className="badge badge-manufactured" style={{ background: 'rgba(46, 204, 113, 0.15)', color: '#2ecc71', border: '1px solid rgba(46, 204, 113, 0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 500, fontSize: '0.8rem' }}>Thành phẩm</span>;
       case 'trading':
-        return <span className="badge badge-trading" style={{ background: 'rgba(155, 89, 182, 0.15)', color: '#9b59b6', border: '1px solid rgba(155, 89, 182, 0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 500, fontSize: '0.8rem' }}>Thương mại</span>;
-      case 'service':
-        return <span className="badge badge-service" style={{ background: 'rgba(241, 196, 15, 0.15)', color: '#f1c40f', border: '1px solid rgba(241, 196, 15, 0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 500, fontSize: '0.8rem' }}>Dịch vụ</span>;
-      case 'combo':
-        return <span className="badge badge-combo" style={{ background: 'rgba(230, 126, 34, 0.15)', color: '#e67e22', border: '1px solid rgba(230, 126, 34, 0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 500, fontSize: '0.8rem' }}>Combo</span>;
       default:
-        return <span className="badge badge-secondary" style={{ background: 'rgba(149, 165, 166, 0.15)', color: '#95a5a6', border: '1px solid rgba(149, 165, 166, 0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 500, fontSize: '0.8rem' }}>Lưu kho</span>;
+        return <span className="badge badge-trading" style={{ background: 'rgba(155, 89, 182, 0.15)', color: '#9b59b6', border: '1px solid rgba(155, 89, 182, 0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 500, fontSize: '0.8rem' }}>Hàng hóa thương mại</span>;
     }
   };
 
   const getStockBadge = (p: any) => {
-    const isStockable = ['product', 'consu', 'raw_material', 'manufactured', 'trading'].includes(p.type) || ['product', 'consu', 'raw_material', 'manufactured', 'trading'].includes(getCustomProductType(p));
-    const qty = isStockable ? (p.qty_available ?? 0) : null;
+    const qty = p.qty_available !== undefined && p.qty_available !== null ? p.qty_available : null;
     
     if (qty === null) {
       return <span className="text-muted">-</span>;
@@ -95,7 +88,7 @@ export const Products: React.FC = () => {
     setEditProdId(null);
     setFormName('');
     setFormCode('');
-    setFormType('product');
+    setFormType('trading');
     setFormPrice(0);
     setFormCost(0);
     setFormQty(0);
@@ -148,19 +141,17 @@ export const Products: React.FC = () => {
 
       if (data.success) {
         const targetId = editProdId || data.id;
-        if (formType !== 'service' && formType !== 'combo') {
-          const originalQty = editProdId ? (cache.products.find(p => p.id === editProdId)?.qty_available ?? 0) : 0;
-          if (!editProdId || Number(formQty) !== originalQty) {
-            try {
-              await fetch(`/api/odoo/products/${targetId}/adjust-stock`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ newQty: Number(formQty) })
-              });
-            } catch (stockErr) {
-              console.error('Failed to adjust stock', stockErr);
-              showToast('Lưu sản phẩm thành công nhưng không thể điều chỉnh tồn kho', 'warning');
-            }
+        const originalQty = editProdId ? (cache.products.find(p => p.id === editProdId)?.qty_available ?? 0) : 0;
+        if (!editProdId || Number(formQty) !== originalQty) {
+          try {
+            await fetch(`/api/odoo/products/${targetId}/adjust-stock`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ newQty: Number(formQty) })
+            });
+          } catch (stockErr) {
+            console.error('Failed to adjust stock', stockErr);
+            showToast('Lưu sản phẩm thành công nhưng không thể điều chỉnh tồn kho', 'warning');
           }
         }
 
@@ -250,41 +241,29 @@ export const Products: React.FC = () => {
       <div className="glass-panel datatable-container">
         <div className="table-header">
           <h2>Danh Sách Sản Phẩm (Odoo)</h2>
-          <div className="table-actions">
-            <input
-              type="text"
-              className="form-input search-input"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Tìm tên hoặc mã sản phẩm..."
-            />
-            <select
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value)}
-              className="form-input"
-              style={{ padding: '8px' }}
-            >
-              <option value="all">Tất cả phân loại</option>
-              <option value="product">Lưu kho</option>
-              <option value="service">Dịch vụ</option>
-              <option value="combo">Combo</option>
-              <option value="raw_material">Nguyên liệu</option>
-              <option value="manufactured">Tự làm</option>
-              <option value="trading">Thương mại</option>
-            </select>
-            <select
-              value={sortOption}
-              onChange={(e) => setSortOption(e.target.value)}
-              className="form-input"
-              style={{ padding: '8px' }}
-            >
-              <option value="name_asc">Tên (A-Z)</option>
-              <option value="name_desc">Tên (Z-A)</option>
-              <option value="price_asc">Giá bán (Thấp - Cao)</option>
-              <option value="price_desc">Giá bán (Cao - Thấp)</option>
-              <option value="stock_desc">Tồn kho (Nhiều - Ít)</option>
-              <option value="stock_asc">Tồn kho (Ít - Nhiều)</option>
-            </select>
+          <TableToolbar
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            searchPlaceholder="Tìm tên hoặc mã sản phẩm..."
+            filterValue={filterType}
+            onFilterChange={setFilterType}
+             filterOptions={[
+              { value: 'all', label: 'Tất cả phân loại' },
+              { value: 'raw_material', label: 'Nguyên vật liệu' },
+              { value: 'trading', label: 'Hàng hóa thương mại' },
+              { value: 'manufactured', label: 'Thành phẩm' }
+            ]}
+            sortOption={sortOption}
+            onSortChange={setSortOption}
+            sortOptions={[
+              { value: 'name_asc', label: 'Sắp xếp: Tên (A-Z)' },
+              { value: 'name_desc', label: 'Sắp xếp: Tên (Z-A)' },
+              { value: 'price_asc', label: 'Sắp xếp: Giá bán (Thấp - Cao)' },
+              { value: 'price_desc', label: 'Sắp xếp: Giá bán (Cao - Thấp)' },
+              { value: 'stock_desc', label: 'Sắp xếp: Tồn kho (Nhiều - Ít)' },
+              { value: 'stock_asc', label: 'Sắp xếp: Tồn kho (Ít - Nhiều)' }
+            ]}
+          >
             {isAllowedToManage && (
               <Button variant="primary" onClick={openCreateModal}>
                 Thêm Sản Phẩm
@@ -293,7 +272,7 @@ export const Products: React.FC = () => {
             <Button variant="secondary" onClick={fetchProducts}>
               Tải Lại
             </Button>
-          </div>
+          </TableToolbar>
         </div>
         
         <div className="responsive-table-wrapper">
@@ -401,10 +380,8 @@ export const Products: React.FC = () => {
               style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', height: '44px' }}
             >
               <option value="raw_material">🔩 Nguyên vật liệu</option>
-              <option value="manufactured">🏭 Thành phẩm tự làm</option>
-              <option value="trading">🔄 Hàng mua - bán lại</option>
-              <option value="service">🛠️ Dịch vụ</option>
-              <option value="combo">📦 Combo</option>
+              <option value="trading">🔄 Hàng hóa thương mại</option>
+              <option value="manufactured">🏭 Thành phẩm</option>
             </select>
           </div>
 
@@ -447,7 +424,7 @@ export const Products: React.FC = () => {
             </div>
             {/* Tồn kho */}
             <div>
-              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: formType === 'service' || formType === 'combo' ? '#d1d5db' : '#6b7280', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#6b7280', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 📦 Tồn Kho
               </label>
               <input
@@ -455,20 +432,13 @@ export const Products: React.FC = () => {
                 id="prodQty"
                 className="form-input"
                 min="0"
-                disabled={formType === 'service' || formType === 'combo'}
                 value={formQty}
                 onChange={(e) => setFormQty(Number(e.target.value))}
                 style={{
                   width: '100%',
-                  boxSizing: 'border-box',
-                  ...(formType === 'service' || formType === 'combo'
-                    ? { backgroundColor: '#f9fafb', color: '#9ca3af', cursor: 'not-allowed', border: '1px solid #e5e7eb' }
-                    : {})
+                  boxSizing: 'border-box'
                 }}
               />
-              {(formType === 'service' || formType === 'combo') && (
-                <p style={{ fontSize: '0.72rem', color: '#9ca3af', marginTop: '4px' }}>Không áp dụng</p>
-              )}
             </div>
           </div>
 

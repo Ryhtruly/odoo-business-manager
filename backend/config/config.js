@@ -3,6 +3,11 @@ const path = require('path');
 
 const CONFIG_FILE = path.join(__dirname, '../../sync_config.json');
 
+function normalizeUrl(url) {
+  if (!url) return '';
+  return 'https://' + url.trim().replace(/^https?:\/\//i, '').replace(/\/odoo\/?$/i, '').replace(/\/$/, '');
+}
+
 // Helper to load credentials from odoo-login.txt
 function loadOdooLogin() {
   try {
@@ -14,20 +19,20 @@ function loadOdooLogin() {
       const userMatch = content.match(/Tên đăng nhập\s*:\s*(.+)/i);
       const passMatch = content.match(/Mật khẩu\s*:\s*(.+)/i);
       return {
-        odooUrl: urlMatch ? 'https://' + urlMatch[1].trim().replace(/^https?:\/\//, '') : 'https://quanly-san-xuat.odoo.com',
-        db: dbMatch ? dbMatch[1].trim() : 'quanly-san-xuat',
-        login: userMatch ? userMatch[1].trim() : 'vanquyen607@gmail.com',
-        password: passMatch ? passMatch[1].trim() : '123456789@Quyen'
+        odooUrl: urlMatch ? normalizeUrl(urlMatch[1]) : 'https://hoabinh.odoo.com',
+        db: dbMatch ? dbMatch[1].trim() : 'hoabinh',
+        login: userMatch ? userMatch[1].trim() : 'lanhuong04011643@gmail.com',
+        password: passMatch ? passMatch[1].trim() : '123456789'
       };
     }
   } catch (e) {
     console.error('Failed to read odoo-login.txt', e);
   }
   return {
-    odooUrl: 'https://quanly-san-xuat.odoo.com',
-    db: 'quanly-san-xuat',
-    login: 'vanquyen607@gmail.com',
-    password: '123456789@Quyen'
+    odooUrl: 'https://hoabinh.odoo.com',
+    db: 'hoabinh',
+    login: 'lanhuong04011643@gmail.com',
+    password: '123456789'
   };
 }
 
@@ -43,7 +48,7 @@ function loadConfig() {
     console.error('Error reading sync_config.json', e);
   }
   return {
-    odooUrl: saved.odooUrl || defaults.odooUrl,
+    odooUrl: normalizeUrl(saved.odooUrl || defaults.odooUrl),
     db: saved.db || defaults.db,
     login: saved.login || defaults.login,
     password: saved.password || defaults.password,
@@ -55,6 +60,9 @@ function loadConfig() {
 // Save configuration
 function saveConfig(config) {
   try {
+    if (config && config.odooUrl) {
+      config.odooUrl = normalizeUrl(config.odooUrl);
+    }
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
     return true;
   } catch (e) {

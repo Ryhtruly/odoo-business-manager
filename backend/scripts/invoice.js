@@ -43,12 +43,23 @@ async function main() {
   if (partners.length) {
     partnerId = partners[0].id;
   } else {
-    partnerId = await call('res.partner', 'create', [{
+    let hasRank = false;
+    try {
+      const fields = await call('res.partner', 'fields_get', [['customer_rank']], { attributes: ['type'] });
+      hasRank = (fields && fields.customer_rank !== undefined);
+    } catch(e) {}
+    
+    const partnerPayload = {
       name: CUSTOMER_NAME,
       type: 'contact',
       street: SHIP_ADDRESS,
-      customer_rank: 1,
-    }]);
+    };
+    if (hasRank) {
+      partnerPayload.customer_rank = 1;
+    } else {
+      partnerPayload.comment = 'Khách hàng';
+    }
+    partnerId = await call('res.partner', 'create', [partnerPayload]);
   }
   console.log('PARTNER', partnerId);
 

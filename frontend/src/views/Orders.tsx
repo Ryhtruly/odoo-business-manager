@@ -276,6 +276,12 @@ export const Orders: React.FC = () => {
         fetchProducts();
         fetchPOs();
         fetchReceipts();
+        // Switch subtab
+        if (isDraft) {
+          setActiveSubTab('poList');
+        } else {
+          setActiveSubTab('historyList');
+        }
       } else {
         showToast(`Lỗi tạo đơn mua hàng: ${data.error}`, 'danger');
         await rollbackCreatedProducts(createdProductMap);
@@ -345,6 +351,7 @@ export const Orders: React.FC = () => {
         fetchPOs();
         fetchReceipts();
         fetchProducts();
+        setActiveSubTab('historyList');
       } else {
         showToast(`Lỗi: ${resData.error}`, 'danger');
       }
@@ -365,6 +372,7 @@ export const Orders: React.FC = () => {
         showToast('Duyệt nhập kho thành công', 'success');
         fetchReceipts();
         fetchProducts();
+        setActiveSubTab('historyList');
       } else {
         showToast(`Lỗi duyệt: ${data.error}`, 'danger');
       }
@@ -1031,7 +1039,7 @@ export const Orders: React.FC = () => {
                           <td>{r.vendor || 'N/A'}</td>
                           <td><span className={stateClass}>{stateLabel}</span></td>
                           <td style={{ textAlign: 'right', paddingRight: '15px', whiteSpace: 'nowrap' }}>
-                            {r.state === 'assigned' && isWarehouseStaff && (
+                            {(r.state === 'assigned' || r.state === 'draft') && isWarehouseStaff && (
                               <Button
                                 size="sm"
                                 variant="primary"
@@ -1272,6 +1280,30 @@ export const Orders: React.FC = () => {
                 >
                   Trả Hàng (Return)
                 </Button>
+              )}
+              {detailType === 'receipt' && (
+                <>
+                  <a
+                    href={`/api/odoo/receipts/${detailData.receipt.id}/pdf?access_token=${encodeURIComponent(session?.token || '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    <Button variant="primary">
+                      Tải Phiếu Nhập Kho (PDF)
+                    </Button>
+                  </a>
+                  <a
+                    href={`/api/odoo/receipts/${detailData.receipt.id}/invoice-pdf?access_token=${encodeURIComponent(session?.token || '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    <Button variant="secondary">
+                      Tải Hóa Đơn Mua Hàng (PDF)
+                    </Button>
+                  </a>
+                </>
               )}
               <Button variant="secondary" onClick={() => setIsDetailModalOpen(false)}>
                 Đóng

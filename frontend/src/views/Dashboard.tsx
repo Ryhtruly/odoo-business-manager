@@ -89,15 +89,23 @@ export const Dashboard: React.FC = () => {
   const role = session?.role || '';
   const isAdmin = role === 'admin';
 
-  // Load metrics initially (optimized to check if cache exists to avoid multiple fetches on tab switch)
+  // Load metrics initially (optimized to only fetch if user has permission and cache is empty)
   useEffect(() => {
-    if (cache.products.length === 0) fetchProducts();
-    if (cache.stock.length === 0) fetchStock();
-    if (cache.invoices.length === 0) fetchInvoices();
-    if (cache.pos.length === 0) fetchPOs();
-    if (cache.receipts.length === 0) fetchReceipts();
-    if (cache.so.length === 0) fetchSO();
-  }, []);
+    if (!role) return;
+    const hasProductsAccess = isAdmin || ['ke_toan_kho', 'san_xuat', 'kinh_doanh'].includes(role);
+    const hasStockAccess = isAdmin || ['ke_toan_kho', 'san_xuat', 'kinh_doanh'].includes(role);
+    const hasInvoicesAccess = isAdmin || ['ke_toan_ban_hang'].includes(role);
+    const hasPOsAccess = isAdmin || ['ke_toan_kho'].includes(role);
+    const hasReceiptsAccess = isAdmin || ['ke_toan_kho'].includes(role);
+    const hasSOAccess = isAdmin || ['kinh_doanh'].includes(role);
+
+    if (hasProductsAccess && cache.products.length === 0) fetchProducts();
+    if (hasStockAccess && cache.stock.length === 0) fetchStock();
+    if (hasInvoicesAccess && cache.invoices.length === 0) fetchInvoices();
+    if (hasPOsAccess && cache.pos.length === 0) fetchPOs();
+    if (hasReceiptsAccess && cache.receipts.length === 0) fetchReceipts();
+    if (hasSOAccess && cache.so.length === 0) fetchSO();
+  }, [role, isAdmin]);
 
   // Auto scroll terminal to bottom
   useEffect(() => {
@@ -109,14 +117,15 @@ export const Dashboard: React.FC = () => {
   // Compute metrics values
   const totalProductsCount = cache.products.length;
   
-  const stockLocations = new Set(cache.stock.map(s => s.location));
+  const internalStock = cache.stock.filter(s => s.usage === 'internal');
+  const stockLocations = new Set(internalStock.map(s => s.location));
   const totalLocationsCount = stockLocations.size;
-  const totalStockQty = cache.stock.reduce((acc, curr) => acc + (curr.quantity || 0), 0);
+  const totalStockQty = internalStock.reduce((acc, curr) => acc + (curr.quantity || 0), 0);
 
-  const totalInvoicesCount = cache.invoices.length;
-  const unpaidInvoicesCount = cache.invoices.filter(i => i.payment_state !== 'paid').length;
+  const totalInvoicesCount = cache.invoices.filter(i => i.state !== 'cancel').length;
+  const unpaidInvoicesCount = cache.invoices.filter(i => i.state === 'posted' && i.payment_state !== 'paid' && i.payment_state !== 'in_payment').length;
 
-  const totalPOsCount = cache.pos.length;
+  const totalPOsCount = cache.pos.filter(po => po.state === 'purchase' || po.state === 'done').length;
   const pendingReceiptsCount = cache.receipts.filter(r => r.state === 'assigned').length;
 
   // Render Chart helper
@@ -138,8 +147,12 @@ export const Dashboard: React.FC = () => {
     if (!ctx) return;
 
     // Register DataLabels if loaded
-    if (typeof window.Chart.register === 'function' && typeof (window as any).ChartDataLabels !== 'undefined') {
-      window.Chart.register((window as any).ChartDataLabels);
+    try {
+      if (typeof window.Chart.register === 'function' && typeof (window as any).ChartDataLabels !== 'undefined') {
+        window.Chart.register((window as any).ChartDataLabels);
+      }
+    } catch (e) {
+      console.warn('ChartDataLabels already registered or registration failed:', e);
     }
 
     const isBarOrLine = type === 'bar' || type === 'line';
@@ -190,7 +203,7 @@ export const Dashboard: React.FC = () => {
     if (!window.Chart) return;
     const stockByProd: Record<string, number> = {};
     cache.stock.forEach(s => {
-      if (s.quantity > 0 && s.product_name) {
+      if (s.usage === 'internal' && s.quantity > 0 && s.product_name) {
         stockByProd[s.product_name] = (stockByProd[s.product_name] || 0) + s.quantity;
       }
     });
@@ -218,10 +231,12 @@ export const Dashboard: React.FC = () => {
   // 2. Invoice Chart Effect
   useEffect(() => {
     if (!window.Chart) return;
+    const activeInvoices = cache.invoices.filter(i => i.state !== 'cancel');
     const invByStatus = {
-      'Đã thanh toán': cache.invoices.filter(i => i.payment_state === 'paid').length,
-      'Chưa thanh toán': cache.invoices.filter(i => !i.payment_state || i.payment_state === 'not_paid').length,
-      'Đang thanh toán': cache.invoices.filter(i => i.payment_state === 'partial' || i.payment_state === 'in_payment').length
+      'Đã thanh toán': activeInvoices.filter(i => i.state === 'posted' && i.payment_state === 'paid').length,
+      'Chưa thanh toán': activeInvoices.filter(i => i.state === 'posted' && (!i.payment_state || i.payment_state === 'not_paid')).length,
+      'Đang thanh toán': activeInvoices.filter(i => i.state === 'posted' && (i.payment_state === 'partial' || i.payment_state === 'in_payment')).length,
+      'Bản nháp': activeInvoices.filter(i => i.state === 'draft').length
     };
     drawChart(
       invoiceChartRef.current,
@@ -242,10 +257,9 @@ export const Dashboard: React.FC = () => {
   // 3. Purchase Flow Chart Effect
   useEffect(() => {
     if (!window.Chart) return;
-    const pendingCount = cache.receipts.filter(r => r.state === 'assigned').length;
     const purchaseFlow = {
-      'Đơn mua hàng': cache.pos.length,
-      'Đang chờ nhập': pendingCount,
+      'Đơn mua hàng': cache.pos.filter(po => po.state === 'purchase' || po.state === 'done').length,
+      'Đang chờ nhập': cache.receipts.filter(r => r.state === 'assigned').length,
       'Đã nhận kho': cache.receipts.filter(r => r.state === 'done').length
     };
     drawChart(
@@ -269,7 +283,7 @@ export const Dashboard: React.FC = () => {
     if (!window.Chart) return;
     const salesByCustomer: Record<string, number> = {};
     cache.so.forEach(so => {
-      if (so.amount_total > 0 && so.partner) {
+      if ((so.state === 'sale' || so.state === 'done') && so.amount_total > 0 && so.partner) {
         salesByCustomer[so.partner] = (salesByCustomer[so.partner] || 0) + so.amount_total;
       }
     });
@@ -299,7 +313,7 @@ export const Dashboard: React.FC = () => {
     if (!window.Chart) return;
     const flowCounts = {
       'Đã chốt': cache.so.filter(so => so.state === 'sale' || so.state === 'done').length,
-      'Chờ sản xuất / Báo giá': cache.so.filter(so => so.state === 'draft' || so.state === 'sent').length,
+      'Báo giá (Draft/Sent)': cache.so.filter(so => so.state === 'draft' || so.state === 'sent').length,
       'Đã hủy': cache.so.filter(so => so.state === 'cancel').length
     };
     drawChart(
