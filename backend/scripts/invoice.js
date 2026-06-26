@@ -1,9 +1,6 @@
-const axios = require('axios');
+const { loadConfig } = require('../config/config');
+const { odooCall, odooAuth } = require('../services/odooService');
 
-const ODOO_URL = 'https://quanly-san-xuat.odoo.com';
-const DB = 'quanly-san-xuat';
-const LOGIN = 'vanquyen607@gmail.com';
-const PASSWORD = process.env.ODOO_PASSWORD || '123456789@Quyen';
 const PRODUCT_CODE = 'NON_VAN_QUYEN';
 const CUSTOMER_NAME = 'Đạt';
 const SHIP_ADDRESS = 'Gò Vấp';
@@ -11,24 +8,17 @@ const QTY = 10;
 const COST = 100000;
 const PRICE = 150000;
 
+let config;
 let cookie = '';
-async function rpc(path, payload) {
-  const res = await axios.post(ODOO_URL + path, payload, {
-    headers: { 'Content-Type': 'application/json; charset=utf-8', ...(cookie ? { Cookie: cookie } : {}) },
-    validateStatus: () => true,
-  });
-  const sc = res.headers['set-cookie'];
-  if (sc && sc.length) cookie = sc.map(x => x.split(';')[0]).join('; ');
-  const data = res.data;
-  if (data && data.error) throw new Error(data.error.data?.message || data.error.message || JSON.stringify(data.error));
-  return data.result;
-}
+
 async function call(model, method, args = [], kwargs = {}) {
-  return rpc('/web/dataset/call_kw', { jsonrpc: '2.0', method: 'call', params: { model, method, args, kwargs } });
+  return odooCall(config, model, method, args, kwargs, cookie);
 }
+
 async function main() {
+  config = loadConfig();
   console.log('AUTH...');
-  await rpc('/web/session/authenticate', { jsonrpc: '2.0', method: 'call', params: { db: DB, login: LOGIN, password: PASSWORD } });
+  cookie = await odooAuth(config);
   console.log('AUTH OK');
 
   const product = await call('product.template', 'search_read', [], {
@@ -53,12 +43,23 @@ async function main() {
   if (partners.length) {
     partnerId = partners[0].id;
   } else {
-    partnerId = await call('res.partner', 'create', [{
+    let hasRank = false;
+    try {
+      const fields = await call('res.partner', 'fields_get', [['customer_rank']], { attributes: ['type'] });
+      hasRank = (fields && fields.customer_rank !== undefined);
+    } catch(e) {}
+    
+    const partnerPayload = {
       name: CUSTOMER_NAME,
       type: 'contact',
       street: SHIP_ADDRESS,
-      customer_rank: 1,
-    }]);
+    };
+    if (hasRank) {
+      partnerPayload.customer_rank = 1;
+    } else {
+      partnerPayload.comment = 'Khách hàng';
+    }
+    partnerId = await call('res.partner', 'create', [partnerPayload]);
   }
   console.log('PARTNER', partnerId);
 

@@ -1,38 +1,23 @@
 // odoo_sync_production.js
 // Workflow khép kín cho Odoo: Sản xuất -> Kho -> Bán hàng -> Hóa đơn -> Thanh toán -> Báo cáo
 
-const axios = require('axios');
-
-const ODOO_URL = 'https://quanly-san-xuat.odoo.com';
-const DB_NAME = 'quanly-san-xuat';
-const USERNAME = 'vanquyen607@gmail.com';
-const PASSWORD = process.env.ODOO_PASSWORD || '123456789';
+const { loadConfig } = require('../config/config');
+const { odooCall, odooAuth } = require('../services/odooService');
 
 const PRODUCT_CODES = ['QA001','ASM001','QJ001','GT001','MLT001','TX001','DN001','VT001','KQ001','AK001','PHO001','BM001','TRASU001','SUC001','CAF001','SHIP001','CONS001','CBO001','CBO002'];
 
-let cookieHeaders = [];
-async function post(path, payload) {
-  const url = ODOO_URL + path; // Construct the full URL
-  console.log(`Attempting POST to: ${url}`); // Log the URL
-  const res = await axios.post(url, payload, {
-    headers: { 'Content-Type': 'application/json; charset=utf-8', Cookie: cookieHeaders.join('; ') },
-    validateStatus: () => true,
-  });
-  const setCookie = res.headers['set-cookie'];
-  if (setCookie) cookieHeaders = setCookie.map(x => x.split(';')[0]);
-  const data = res.data;
-  if (data && data.error) throw new Error(data.error.data?.message || data.error.message || JSON.stringify(data.error));
-  return data.result;
-}
+let config;
+let cookie = '';
+
 async function call(model, method, args = [], kwargs = {}) {
-  // This function always calls post with '/web/dataset/call_kw'
-  return post('/web/dataset/call_kw', { jsonrpc:'2.0', method:'call', params:{ model, method, args, kwargs } });
+  return odooCall(config, model, method, args, kwargs, cookie);
 }
 
 async function authenticate() {
+  config = loadConfig();
   console.log('Attempting authentication...');
-  await post('/web/session/authenticate', { jsonrpc:'2.0', method:'call', params:{ db: DB_NAME, login: USERNAME, password: PASSWORD } });
-  console.log('Authentication successful (or server error returned).');
+  cookie = await odooAuth(config);
+  console.log('Authentication successful.');
 }
 
 async function ensureStock(productCode, qtyToAdd) {

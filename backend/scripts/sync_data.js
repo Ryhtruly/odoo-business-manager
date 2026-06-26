@@ -4,108 +4,33 @@
 //
 // Run: node odoo_gsheet_bidirectional_sync.js
 
-const axios = require('axios');
-const fs = require('fs');
-const https = require('https');
-const crypto = require('crypto');
+const { loadConfig } = require('../config/config');
+const { odooCall: serviceCall, odooAuth: serviceAuth, odooRpc: serviceRpc } = require('../services/odooService');
+const { getGoogleAccessToken, ensureSheet, clearAndWrite, readRange, parseSheet, gs } = require('../services/googleSheetsService');
 
 const CONFIG = {
-  odooUrl: process.env.ODOO_URL || 'https://quanly-san-xuat.odoo.com',
-  db: process.env.ODOO_DB || 'quanly-san-xuat',
-  login: process.env.ODOO_LOGIN || 'vanquyen607@gmail.com',
-  password: process.env.ODOO_PASSWORD || null,
   sheetId: process.env.GSHEET_ID || '1Jzw_V9e4Gfw1QKr11YIa9SVLqaLwvD8cH7dZ7HgWGYE',
-  credsPath: process.env.GOOGLE_CREDENTIALS || 'C:/Users/Admin/.openclaw/credentials/google-credentials.json',
+  credsPath: process.env.GOOGLE_CREDENTIALS || 'google-credentials.json',
   tabs: { products: 'Products', stock: 'Stock', invoices: 'Invoices', po: 'PO', receipts: 'Receipts', log: 'Sync_Log' },
 };
 
+let config;
 let cookie = '';
 
 // ── Odoo helpers ──────────────────────────────────────────────
 
-function readPasswordFromFile() {
-  try {
-    const txt = fs.readFileSync('C:/Users/Admin/.openclaw/workspace/skills/odoo-login.txt', 'utf8');
-    const m = txt.match(/Mật khẩu\s*:\s*(.+)/i);
-    return m ? m[1].trim() : null;
-  } catch { return null; }
-}
-function getPassword() { return CONFIG.password || readPasswordFromFile(); }
-
 async function odooRpc(path, payload) {
-  const res = await axios.post(CONFIG.odooUrl + path, payload, {
-    headers: { 'Content-Type': 'application/json; charset=utf-8', ...(cookie ? { Cookie: cookie } : {}) },
-    validateStatus: () => true,
-  });
-  const sc = res.headers['set-cookie'];
-  if (sc && sc.length) cookie = sc.map(x => x.split(';')[0]).join('; ');
-  const data = res.data;
-  if (data && data.error) throw new Error(data.error.data?.message || data.error.message || JSON.stringify(data.error));
-  return data.result;
+  const { result, cookie: newCookie } = await serviceRpc(config, path, payload, cookie);
+  if (newCookie) cookie = newCookie;
+  return result;
 }
 
 async function odooCall(model, method, args = [], kwargs = {}) {
-  return odooRpc('/web/dataset/call_kw', { jsonrpc: '2.0', method: 'call', params: { model, method, args, kwargs } });
+  return serviceCall(config, model, method, args, kwargs, cookie);
 }
 
 async function odooAuth() {
-  const password = getPassword();
-  if (!password) throw new Error('Missing Odoo password — check odoo-login.txt or ODOO_PASSWORD env');
-  await odooRpc('/web/session/authenticate', { jsonrpc: '2.0', method: 'call', params: { db: CONFIG.db, login: CONFIG.login, password } });
-}
-
-// ── Google Sheets helpers ─────────────────────────────────────
-
-function b64url(input) {
-  return Buffer.from(input).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-}
-
-function signJwt(sa) {
-  const header = { alg: 'RS256', typ: 'JWT' };
-  const now = Math.floor(Date.now() / 1000);
-  const claim = { iss: sa.client_email, scope: 'https://www.googleapis.com/auth/spreadsheets', aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 };
-  const unsigned = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(claim))}`;
-  const signer = crypto.createSign('RSA-SHA256');
-  signer.update(unsigned);
-  const sig = signer.sign(sa.private_key, 'base64');
-  return `${unsigned}.${sig.replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')}`;
-}
-
-async function getGoogleAccessToken() {
-  const sa = JSON.parse(fs.readFileSync(CONFIG.credsPath, 'utf8'));
-  const jwt = signJwt(sa);
-  const body = new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: jwt }).toString();
-  const res = await axios.post('https://oauth2.googleapis.com/token', body, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
-  return res.data.access_token;
-}
-
-async function gs(method, url, token, data) {
-  const res = await axios({ method, url, data, httpsAgent: new https.Agent({ keepAlive: true }), headers: { Authorization: `Bearer ${token}` }, validateStatus: () => true });
-  if (res.status >= 400) throw new Error(`Google API ${res.status}: ${JSON.stringify(res.data)}`);
-  return res.data;
-}
-
-async function ensureSheet(token, title) {
-  const meta = await gs('get', `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.sheetId}?fields=sheets.properties`, token);
-  if ((meta.sheets || []).some(s => s.properties?.title === title)) return;
-  await gs('post', `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.sheetId}:batchUpdate`, token, { requests: [{ addSheet: { properties: { title } } }] });
-}
-
-async function clearAndWrite(token, range, values) {
-  const enc = encodeURIComponent(range);
-  await gs('post', `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.sheetId}/values/${enc}:clear`, token, {});
-  await gs('put', `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.sheetId}/values/${enc}?valueInputOption=RAW`, token, { values });
-}
-
-async function readRange(token, range) {
-  const data = await gs('get', `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.sheetId}/values/${encodeURIComponent(range)}`, token);
-  return data.values || [];
-}
-
-function parseSheet(rows) {
-  if (!rows.length) return [];
-  const h = rows[0];
-  return rows.slice(1).filter(r => r.length).map(r => Object.fromEntries(h.map((k, i) => [k, r[i] ?? ''])));
+  cookie = await serviceAuth(config);
 }
 
 // ── Fetch Odoo data ───────────────────────────────────────────
@@ -167,38 +92,38 @@ async function fetchReceipts() {
 // ── Push Odoo → Sheet ─────────────────────────────────────────
 
 async function pushToSheet(token) {
-  await ensureSheet(token, CONFIG.tabs.products);
-  await ensureSheet(token, CONFIG.tabs.stock);
-  await ensureSheet(token, CONFIG.tabs.invoices);
-  await ensureSheet(token, CONFIG.tabs.po);
-  await ensureSheet(token, CONFIG.tabs.receipts);
+  await ensureSheet(CONFIG.sheetId, token, CONFIG.tabs.products);
+  await ensureSheet(CONFIG.sheetId, token, CONFIG.tabs.stock);
+  await ensureSheet(CONFIG.sheetId, token, CONFIG.tabs.invoices);
+  await ensureSheet(CONFIG.sheetId, token, CONFIG.tabs.po);
+  await ensureSheet(CONFIG.sheetId, token, CONFIG.tabs.receipts);
 
   const products = await fetchProducts();
-  await clearAndWrite(token, `${CONFIG.tabs.products}!A1`, [
+  await clearAndWrite(CONFIG.sheetId, token, `${CONFIG.tabs.products}!A1`, [
     ['default_code', 'name', 'list_price', 'standard_price', 'type', 'description', 'write_date', 'source'],
     ...products.map(r => [r.default_code, r.name, r.list_price, r.standard_price, r.type, r.description, r.write_date, r.source]),
   ]);
 
   const stock = await fetchStock();
-  await clearAndWrite(token, `${CONFIG.tabs.stock}!A1`, [
+  await clearAndWrite(CONFIG.sheetId, token, `${CONFIG.tabs.stock}!A1`, [
     ['id', 'product_code', 'product_name', 'location', 'usage', 'quantity', 'write_date', 'source'],
     ...stock.map(r => [r.id, r.product_code, r.product_name, r.location, r.usage, r.quantity, r.write_date, r.source]),
   ]);
 
   const invoices = await fetchInvoices();
-  await clearAndWrite(token, `${CONFIG.tabs.invoices}!A1`, [
+  await clearAndWrite(CONFIG.sheetId, token, `${CONFIG.tabs.invoices}!A1`, [
     ['id', 'invoice_number', 'partner', 'amount_total', 'amount_residual', 'payment_state', 'state', 'invoice_date', 'write_date', 'source'],
     ...invoices.map(r => [r.id, r.invoice_number, r.partner, r.amount_total, r.amount_residual, r.payment_state, r.state, r.invoice_date, r.write_date, r.source]),
   ]);
 
   const pos = await fetchPO();
-  await clearAndWrite(token, `${CONFIG.tabs.po}!A1`, [
+  await clearAndWrite(CONFIG.sheetId, token, `${CONFIG.tabs.po}!A1`, [
     ['id', 'po_number', 'vendor', 'amount_total', 'state', 'date_order', 'write_date', 'source'],
     ...pos.map(r => [r.id, r.po_number, r.vendor, r.amount_total, r.state, r.date_order, r.write_date, r.source]),
   ]);
 
   const receipts = await fetchReceipts();
-  await clearAndWrite(token, `${CONFIG.tabs.receipts}!A1`, [
+  await clearAndWrite(CONFIG.sheetId, token, `${CONFIG.tabs.receipts}!A1`, [
     ['id', 'receipt_number', 'origin', 'vendor', 'state', 'scheduled_date', 'write_date', 'source'],
     ...receipts.map(r => [r.id, r.receipt_number, r.origin, r.vendor, r.state, r.scheduled_date, r.write_date, r.source]),
   ]);
@@ -209,7 +134,7 @@ async function pushToSheet(token) {
 // ── Pull Sheet → Odoo (Products only — stock/invoices read-only) ──
 
 async function pullToOdoo(token) {
-  const raw = await readRange(token, `${CONFIG.tabs.products}!A1:H2000`);
+  const raw = await readRange(CONFIG.sheetId, token, `${CONFIG.tabs.products}!A1:H2000`);
   const sheetRows = parseSheet(raw);
   const odooRows = await fetchProducts();
   let applied = 0;
@@ -285,7 +210,7 @@ async function pullToOdoo(token) {
 // ── Log ───────────────────────────────────────────────────────
 
 async function logSync(token, message) {
-  await ensureSheet(token, CONFIG.tabs.log);
+  await ensureSheet(CONFIG.sheetId, token, CONFIG.tabs.log);
   await gs('post', `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.sheetId}/values/${encodeURIComponent(CONFIG.tabs.log)}!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, token, {
     values: [[new Date().toISOString(), message]],
   });
@@ -294,12 +219,16 @@ async function logSync(token, message) {
 // ── Main ──────────────────────────────────────────────────────
 
 async function main() {
+  config = loadConfig();
+  if (config.sheetId) {
+    CONFIG.sheetId = config.sheetId;
+  }
   console.log('1. Authenticating Odoo...');
   await odooAuth();
   console.log('   ✅ Odoo OK');
 
   console.log('2. Authenticating Google Sheets...');
-  const token = await getGoogleAccessToken();
+  const token = await getGoogleAccessToken(config, CONFIG.credsPath);
   console.log('   ✅ Google OK');
 
   console.log('3. Pushing Odoo → Sheet...');

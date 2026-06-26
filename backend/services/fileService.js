@@ -16,36 +16,36 @@ const DEFAULT_USERS = [
 const DEFAULT_PRODUCTION_BOM = {
   rules: [
     {
-      match: { product_code_prefix: 'CBO' },
+      match: { product_code: 'XD-TP-CUA-001' },
       lines: [
-        { code: 'ST016', qty_per_unit: 1 },
-        { code: 'ST021', qty_per_unit: 1 },
-        { code: 'ST022', qty_per_unit: 1 }
+        { code: 'XD-THEP-002', qty_per_unit: 6 },
+        { code: 'XD-THEP-001', qty_per_unit: 2 }
       ]
     },
     {
-      match: { product_code: 'QA001' },
+      match: { product_code: 'XD-TP-COFA-001' },
       lines: [
-        { code: 'ST016', qty_per_unit: 1 },
-        { code: 'ST021', qty_per_unit: 1 },
-        { code: 'ST022', qty_per_unit: 1 }
+        { code: 'XD-THEP-003', qty_per_unit: 4 }
       ]
     },
     {
-      match: { product_code: 'ASM001' },
+      match: { product_code: 'XD-TP-RAO-001' },
       lines: [
-        { code: 'ST016', qty_per_unit: 1 },
-        { code: 'ST021', qty_per_unit: 1 },
-        { code: 'ST022', qty_per_unit: 1 }
+        { code: 'XD-THEP-002', qty_per_unit: 3 }
+      ]
+    },
+    {
+      match: { product_code: 'XD-TP-BTONG-001' },
+      lines: [
+        { code: 'XD-THEP-003', qty_per_unit: 4 },
+        { code: 'XD-XM-001', qty_per_unit: 2 },
+        { code: 'XD-CAT-002', qty_per_unit: 0.05 },
+        { code: 'XD-DA-001', qty_per_unit: 0.08 }
       ]
     },
     {
       match: { default: true },
-      lines: [
-        { code: 'ST017', qty_per_unit: 2 },
-        { code: 'ST018', qty_per_unit: 2 },
-        { code: 'ST019', qty_per_unit: 2 }
-      ]
+      lines: []
     }
   ]
 };
