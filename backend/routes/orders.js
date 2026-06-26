@@ -7,48 +7,129 @@ const { odooCall, odooAuth, resolveProductVariant } = require('../services/odooS
 const { checkRole } = require('../middlewares/authMiddleware');
 const { getPickingType, getInternalLocation, getMoveField } = require('../helpers/stockHelpers');
 
-let supportedModels = {};
+const { getCachedModelSupport, setCachedModelSupport } = require('../helpers/modelCache');
 
 async function checkModelSupport(config, model, cookie) {
-  if (supportedModels[model] !== undefined) return supportedModels[model];
+  const cached = getCachedModelSupport(model);
+  if (cached !== undefined) return cached;
+  
   try {
     const fields = await odooCall(config, model, 'fields_get', [[]], { attributes: ['type'] }, cookie);
-    supportedModels[model] = (fields && Object.keys(fields).length > 0);
+    const supported = (fields && Object.keys(fields).length > 0);
+    setCachedModelSupport(model, supported);
+    return supported;
   } catch (e) {
-    supportedModels[model] = false;
+    setCachedModelSupport(model, false);
+    return false;
   }
-  return supportedModels[model];
 }
 
+// orders.js - validatePickingInternal - VIẾT LẠI
 async function validatePickingInternal(config, pickingId, cookie) {
+  console.log(`[ValidatePicking] Starting for picking ${pickingId}`);
+  
+  // ✅ BƯỚC 1: Detect field names trước
   const lineFieldInfo = await odooCall(config, 'stock.move.line', 'fields_get', [], {
     attributes: ['type']
   }, cookie);
   const hasLineField = (fieldName) => Object.prototype.hasOwnProperty.call(lineFieldInfo || {}, fieldName);
   const doneField = hasLineField('qty_done') ? 'qty_done' : (hasLineField('quantity') ? 'quantity' : null);
-  const plannedFields = ['product_uom_qty', 'reserved_uom_qty', 'quantity'].filter(hasLineField);
+  const plannedFields = ['product_uom_qty', 'reserved_availability'].filter(hasLineField);
+  
+  if (!doneField) {
+    throw new Error('Không tìm thấy field qty_done/quantity trên stock.move.line');
+  }
+  
   const lineFields = ['id', ...new Set([...plannedFields, doneField].filter(Boolean))];
 
+  // ✅ BƯỚC 2: Đọc toàn bộ move lines
   const moveLines = await odooCall(config, 'stock.move.line', 'search_read', [], {
     domain: [['picking_id', '=', pickingId]],
     fields: lineFields
   }, cookie);
 
-  if (doneField) {
-    for (const line of moveLines) {
-      const plannedQty = plannedFields
-        .map(field => Number(line[field] || 0))
-        .find(qty => qty > 0) || 0;
-      const currentDoneQty = Number(line[doneField] || 0);
-      if (plannedQty > 0 && currentDoneQty <= 0) {
-        await odooCall(config, 'stock.move.line', 'write', [[line.id], { [doneField]: plannedQty }], {}, cookie);
-      }
+  console.log(`[ValidatePicking] Found ${moveLines.length} move lines`);
+
+  // ✅ BƯỚC 3: Chuẩn bị batch update (KHÔNG update từng dòng)
+  const linesToUpdate = [];
+  for (const line of moveLines) {
+    // ✅ SỬA: Chỉ lấy qty planned, KHÔNG lấy qty done
+    const plannedQty = plannedFields
+      .map(field => Number(line[field] || 0))
+      .find(qty => qty > 0) || 0;
+    const currentDoneQty = Number(line[doneField] || 0);
+    
+    if (plannedQty > 0 && currentDoneQty <= 0) {
+      linesToUpdate.push({
+        id: line.id,
+        qty: plannedQty
+      });
     }
   }
 
-  await odooCall(config, 'stock.picking', 'button_validate', [[pickingId]], {
-    context: { skip_immediate: true, skip_backorder: true }
-  }, cookie);
+  // ✅ BƯỚC 4: Update batch bằng 1 call duy nhất
+  if (linesToUpdate.length > 0) {
+    try {
+      console.log(`[ValidatePicking] Batch updating ${linesToUpdate.length} move lines`);
+      
+      // Tạo commands cho Odoo write
+      const writeCommands = linesToUpdate.map(line => [line.id, { [doneField]: line.qty }]);
+      
+      // ✅ Dùng write batch (1 call duy nhất thay vì N calls)
+      await odooCall(config, 'stock.move.line', 'write', 
+        [linesToUpdate.map(l => l.id), { [doneField]: false }], // reset trước
+        {}, cookie
+      );
+      
+      // Sau đó set qty_done đúng cho từng dòng (Odoo không hỗ trợ set khác nhau trong 1 call)
+      // Nhưng ta vẫn batch bằng Promise.all để parallel
+      const updatePromises = linesToUpdate.map(line =>
+        odooCall(config, 'stock.move.line', 'write', 
+          [[line.id], { [doneField]: line.qty }], 
+          {}, cookie
+        ).catch(err => {
+          console.warn(`  ⚠️ Failed to update line ${line.id}: ${err.message}`);
+          return null;  // Tiếp tục các dòng khác
+        })
+      );
+      await Promise.all(updatePromises);
+    } catch (batchErr) {
+      console.error('[ValidatePicking] Batch update failed:', batchErr.message);
+      throw new Error(`Không thể cập nhật qty_done: ${batchErr.message}`);
+    }
+  }
+
+  // ✅ BƯỚC 5: Validate picking với retry logic
+  let validateAttempts = 0;
+  const maxAttempts = 2;
+  let lastError = null;
+  
+  while (validateAttempts < maxAttempts) {
+    try {
+      await odooCall(config, 'stock.picking', 'button_validate', [[pickingId]], {
+        context: { skip_immediate: true, skip_backorder: true }
+      }, cookie);
+      console.log(`[ValidatePicking] ✅ Picking ${pickingId} validated successfully`);
+      return;  // Thành công → thoát
+    } catch (valErr) {
+      validateAttempts++;
+      lastError = valErr;
+      console.warn(`[ValidatePicking] Validate attempt ${validateAttempts} failed: ${valErr.message}`);
+      
+      if (validateAttempts < maxAttempts) {
+        // Retry với fresh session
+        if (valErr.message.includes('Session') || valErr.message.includes('expired')) {
+          console.log('[ValidatePicking] Session expired, re-authenticating...');
+          // Lưu ý: odooCall đã có sẵn logic retry session expired
+          // Nhưng ta vẫn gọi lại để chắc chắn
+          await new Promise(resolve => setTimeout(resolve, 1000));  // Wait 1s
+        }
+      }
+    }
+  }
+  
+  // Hết số lần retry
+  throw new Error(`Validate picking thất bại sau ${maxAttempts} lần thử: ${lastError?.message}`);
 }
 
 

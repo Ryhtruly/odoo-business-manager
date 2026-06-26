@@ -24,7 +24,7 @@ export const Invoices: React.FC = () => {
   // Payment Modal States
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState<boolean>(false);
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
-  
+
   // Payment Form Fields
   const [payAmount, setPayAmount] = useState<number>(0);
   const [payInvoiceGTGT, setPayInvoiceGTGT] = useState<string>('');
@@ -283,7 +283,7 @@ export const Invoices: React.FC = () => {
             <Button variant="secondary" onClick={fetchInvoices}>Tải Lại</Button>
           </div>
         </div>
-        
+
         <div className="responsive-table-wrapper">
           <table>
             <thead>
@@ -349,7 +349,7 @@ export const Invoices: React.FC = () => {
                               &#8226;&#8226;&#8226;
                             </button>
                             {activeDropdownId === i.id && (
-                              <div className="action-dropdown-menu show" style={{ position: 'absolute', right: 0, zIndex: 10, background: '#white', boxShadow: '0 2px 10px rgba(0,0,0,0.1)', borderRadius: '4px', minWidth: '150px' }}>
+                              <div className="action-dropdown-menu show" style={{ position: 'absolute', right: 0, zIndex: 10, background: '#ffff', boxShadow: '0 2px 10px rgba(0,0,0,0.1)', borderRadius: '4px', minWidth: '150px' }}>
                                 {i.state === 'draft' && (
                                   <>
                                     <button
@@ -504,10 +504,11 @@ export const Invoices: React.FC = () => {
                 id="payAmount"
                 className="form-input"
                 min="0"
-                required
+
                 value={payAmount}
                 onChange={(e) => setPayAmount(Number(e.target.value))}
               />
+
               {isAmountWarning && (
                 <span className="text-danger" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 'bold', marginTop: '4px' }}>
                   ⚠️ Vượt quá tổng tiền đơn hàng gốc!

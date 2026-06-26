@@ -8,17 +8,21 @@ const { checkRole } = require('../middlewares/authMiddleware');
 const { validatePickingInternal } = require('./orders');
 const { getPickingType, getMoveField } = require('../helpers/stockHelpers');
 
-let supportedModels = {};
+const { getCachedModelSupport, setCachedModelSupport } = require('../helpers/modelCache');
 
 async function checkModelSupport(config, model, cookie) {
-  if (supportedModels[model] !== undefined) return supportedModels[model];
+  const cached = getCachedModelSupport(model);
+  if (cached !== undefined) return cached;
+  
   try {
     const fields = await odooCall(config, model, 'fields_get', [[]], { attributes: ['type'] }, cookie);
-    supportedModels[model] = (fields && Object.keys(fields).length > 0);
+    const supported = (fields && Object.keys(fields).length > 0);
+    setCachedModelSupport(model, supported);
+    return supported;
   } catch (e) {
-    supportedModels[model] = false;
+    setCachedModelSupport(model, false);
+    return false;
   }
-  return supportedModels[model];
 }
 
 async function resolveStockForVariant(config, variantId, locationId, cookie) {
@@ -292,6 +296,7 @@ router.post('/odoo/deliveries/:id/validate', checkRole(['kinh_doanh']), async (r
   }
 });
 
+// sales.js - router.post('/odoo/so/:id/cancel') - VIẾT LẠI TOÀN BỘ
 router.post('/odoo/so/:id/cancel', checkRole(['kinh_doanh']), async (req, res) => {
   try {
     const config = loadConfig();
@@ -300,59 +305,44 @@ router.post('/odoo/so/:id/cancel', checkRole(['kinh_doanh']), async (req, res) =
 
     const supportsSO = await checkModelSupport(config, 'sale.order', cookie);
     if (!supportsSO) {
+      // Fallback: chỉ cancel picking thẳng
       await odooCall(config, 'stock.picking', 'write', [[soId], { state: 'cancel' }], {}, cookie);
       return res.json({ success: true, message: 'Đã hủy đơn xuất kho thành công.' });
     }
 
-    const order = await odooCall(config, 'sale.order', 'read', [[soId], ['id', 'name', 'partner_id', 'state', 'order_line']], {}, cookie);
+    const order = await odooCall(config, 'sale.order', 'read', 
+      [[soId], ['id', 'name', 'partner_id', 'state', 'order_line']], {}, cookie);
     if (!order || !order.length) {
       return res.status(404).json({ success: false, error: 'Không tìm thấy đơn bán hàng' });
     }
     const so = order[0];
 
-    let lines = [];
-    if (so.order_line && so.order_line.length) {
-      lines = await odooCall(config, 'sale.order.line', 'read', [so.order_line, ['product_id', 'product_uom_qty', 'price_unit']], {}, cookie);
-    }
-
+    // ✅ BƯỚC MỚI: Kiểm tra picking đã done chưa
     const pickings = await odooCall(config, 'stock.picking', 'search_read', [], {
       domain: [['sale_id', '=', soId]],
-      fields: ['id', 'state']
+      fields: ['id', 'state', 'name', 'move_ids', 'picking_type_id', 'location_id', 'location_dest_id']
     }, cookie);
 
-    const isPickingDone = pickings.some(p => p.state === 'done');
-    if (isPickingDone && lines.length) {
-      const locs = await odooCall(config, 'stock.location', 'search_read', [], {
-        domain: [['usage', '=', 'internal']],
-        fields: ['id', 'name'],
-        limit: 1
-      }, cookie);
-      const locationId = locs[0]?.id;
-      if (locationId) {
-        for (const line of lines) {
-          const variantId = Array.isArray(line.product_id) ? line.product_id[0] : line.product_id;
-          const qty = Number(line.product_uom_qty);
-          if (qty > 0) {
-            const quants = await odooCall(config, 'stock.quant', 'search_read', [], {
-              domain: [['product_id', '=', variantId], ['location_id', '=', locationId]],
-              fields: ['id', 'quantity']
-            }, cookie);
-            if (quants && quants.length) {
-              const rq = quants[0];
-              const restoredQty = (rq.quantity || 0) + qty;
-              await odooCall(config, 'stock.quant', 'write', [[rq.id], { quantity: restoredQty }], {}, cookie);
-            } else {
-              await odooCall(config, 'stock.quant', 'create', [{
-                product_id: variantId,
-                location_id: locationId,
-                quantity: qty
-              }], {}, cookie);
-            }
-          }
-        }
+    const donePickings = pickings.filter(p => p.state === 'done');
+    let returnPickingId = null;
+    let returnWarning = '';
+
+    if (donePickings.length > 0) {
+      // ✅ TẠO RETURN PICKING thay vì sửa stock.quant
+      console.log(`SO ${soId} có ${donePickings.length} picking done → tạo return picking`);
+      
+      try {
+        returnPickingId = await createReturnPicking(config, cookie, donePickings, so);
+      } catch (returnErr) {
+        console.error('Lỗi tạo return picking:', returnErr.message);
+        return res.status(500).json({
+          success: false,
+          error: 'Không thể tạo phiếu nhập lại hàng: ' + returnErr.message
+        });
       }
     }
 
+    // ✅ HỦY các picking chưa done
     for (const p of pickings) {
       if (p.state !== 'done' && p.state !== 'cancel') {
         try {
@@ -363,15 +353,113 @@ router.post('/odoo/so/:id/cancel', checkRole(['kinh_doanh']), async (req, res) =
       }
     }
 
+    // ✅ HỦY sale.order
     await odooCall(config, 'sale.order', 'write', [[soId], { state: 'cancel' }], {}, cookie);
 
     res.json({
-      success: true
+      success: true,
+      message: returnPickingId 
+        ? `Đã hủy đơn và tạo phiếu nhập lại hàng #${returnPickingId}`
+        : 'Đã hủy đơn thành công',
+      returnPickingId,
+      warning: returnWarning || undefined
     });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
 });
+
+/**
+ * ✅ HÀM MỚI: Tạo return picking đúng chuẩn Odoo
+ * Tạo stock.move với origin trỏ về picking gốc
+ * Odoo sẽ tự sinh accounting entries
+ */
+async function createReturnPicking(config, cookie, originalPickings, saleOrder) {
+  const moveField = await getMoveField(config, cookie);
+  
+  // Lấy tất cả move IDs từ các picking đã done
+  const allMoveIds = [];
+  for (const p of originalPickings) {
+    const moves = p[moveField] || p.move_ids || [];
+    allMoveIds.push(...moves);
+  }
+
+  if (allMoveIds.length === 0) {
+    throw new Error('Không có dòng hàng nào trong picking gốc');
+  }
+
+  // Đọc chi tiết các move
+  const moveFields = await odooCall(config, 'stock.move', 'fields_get', [[]], { attributes: ['type'] }, cookie);
+  const qtyField = moveFields.quantity !== undefined ? 'quantity' : 'quantity_done';
+  
+  const readFields = ['product_id', qtyField, 'state', 'uom_id', 'product_uom_qty', 'location_id', 'location_dest_id'];
+  if (moveFields.price_unit !== undefined) readFields.push('price_unit');
+
+  const originalMoves = await odooCall(config, 'stock.move', 'read', [allMoveIds, readFields], {}, cookie);
+  
+  // Lấy return picking type
+  const returnPickingType = await odooCall(config, 'stock.picking.type', 'search_read', [], {
+    domain: [['code', '=', 'incoming']],  // Phiếu nhập lại vào kho
+    fields: ['id', 'name', 'default_location_src_id', 'default_location_dest_id'],
+    limit: 1
+  }, cookie);
+  
+  if (!returnPickingType.length) {
+    throw new Error('Không tìm thấy Operation Type "incoming" trong Odoo');
+  }
+  
+  const pType = returnPickingType[0];
+  const sourceLocId = pType.default_location_src_id[0];  // Supplier location
+  const destLocId = pType.default_location_dest_id[0];    // Internal location
+
+  // Tạo return moves
+  const returnMoveLines = originalMoves
+    .filter(m => m.state === 'done')
+    .map(m => {
+      const qty = Number(m[qtyField] || m.product_uom_qty || 0);
+      const variantId = Array.isArray(m.product_id) ? m.product_id[0] : m.product_id;
+      const uomId = m.uom_id ? (Array.isArray(m.uom_id) ? m.uom_id[0] : m.uom_id) : 1;
+
+      return [0, 0, {
+        product_id: variantId,
+        product_uom_qty: qty,
+        uom_id: uomId,
+        location_id: sourceLocId,
+        location_dest_id: destLocId,
+        origin_returned_move_id: m.id,  // ✅ Liên kết với move gốc
+        price_unit: Number(m.price_unit || 0),
+        description_picking: `Hoàn trả từ SO ${saleOrder.name}`
+      }];
+    });
+
+  if (returnMoveLines.length === 0) {
+    throw new Error('Không có move nào ở trạng thái done để hoàn trả');
+  }
+
+  // Tạo return picking
+  const returnPickingId = await odooCall(config, 'stock.picking', 'create', [{
+    partner_id: saleOrder.partner_id ? saleOrder.partner_id[0] : null,
+    picking_type_id: pType.id,
+    location_id: sourceLocId,
+    location_dest_id: destLocId,
+    origin: `Return of ${saleOrder.name}`,
+    [moveField]: returnMoveLines
+  }], {}, cookie);
+
+  console.log(`Created return picking ${returnPickingId} for SO ${saleOrder.id}`);
+
+  // Validate return picking ngay để cập nhật tồn kho
+  try {
+    await validatePickingInternal(config, returnPickingId, cookie);
+    console.log(`✅ Return picking ${returnPickingId} validated → stock restored`);
+  } catch (valErr) {
+    console.warn(`⚠️ Return picking created but not validated: ${valErr.message}`);
+    console.warn('   → User cần vào Odoo validate thủ công để cập nhật tồn kho');
+  }
+
+  return returnPickingId;
+}
+
 
 router.get('/odoo/so/:id', checkRole(['kinh_doanh']), async (req, res) => {
   try {

@@ -57,19 +57,37 @@ function loadConfig() {
   };
 }
 
-// Save configuration
+
+// config.js
+const { clearModelCache } = require('../helpers/modelCache');
+
 function saveConfig(config) {
   try {
     if (config && config.odooUrl) {
       config.odooUrl = normalizeUrl(config.odooUrl);
     }
+    
+    // ✅ Clear cache khi URL hoặc DB đổi (model support có thể khác)
+    const oldConfig = loadConfig();
+    const configChanged = 
+      oldConfig.odooUrl !== config.odooUrl || 
+      oldConfig.db !== config.db;
+    
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
+    
+    if (configChanged) {
+      clearOdooSessionCache();
+      clearModelCache();  // ✅ Thêm dòng này
+      console.log('Config changed → cleared all caches');
+    }
+    
     return true;
   } catch (e) {
     console.error('Error saving sync_config.json', e);
     return false;
   }
 }
+
 
 module.exports = {
   loadOdooLogin,

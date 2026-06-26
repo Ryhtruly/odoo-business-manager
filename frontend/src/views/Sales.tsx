@@ -1,3 +1,4 @@
+// client/src/views/Sales.tsx
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import Button from '../components/common/Button';
@@ -26,9 +27,9 @@ export const Sales: React.FC = () => {
     return product ? Number(product.qty_available ?? 0) : 0;
   };
 
-  const checkStockSufficient = (lines: SOLine[]): { 
-    sufficient: boolean; 
-    details: Array<{ product_name: string; needed: number; available: number; shortage: number }> 
+  const checkStockSufficient = (lines: SOLine[]): {
+    sufficient: boolean;
+    details: Array<{ product_name: string; needed: number; available: number; shortage: number }>
   } => {
     const details = lines.map(line => {
       const product = cache.products.find(p => p.id === line.product_id);
@@ -76,7 +77,11 @@ export const Sales: React.FC = () => {
     if (cache.so.length === 0) fetchSO();
     if (cache.customers.length === 0) fetchCustomers();
     if (cache.products.length === 0) fetchProducts();
+  }, []);
+
+  useEffect(() => {
     resetForm();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Sync price when product changes
@@ -207,8 +212,8 @@ export const Sales: React.FC = () => {
           .filter(d => d.shortage > 0)
           .map(d => `- ${d.product_name}: Cần ${d.needed}, Có sẵn ${d.available} (Thiếu ${d.shortage})`)
           .join('\n');
-        
-        if (!confirm(`Đơn hàng có sản phẩm không đủ tồn kho:\n${shortages}\n\nĐơn hàng sẽ chuyển sang trạng thái Chờ sản xuất. Bạn có chắc chắn muốn tiếp tục?`)) {
+
+        if (!confirm(`Đơn hàng có sản phẩm không đủ tồn kho:\n${shortages}\n\nBạn có chắc chắn muốn tiếp tục?`)) {
           return;
         }
       }
@@ -269,7 +274,7 @@ export const Sales: React.FC = () => {
         if (data.warning) {
           showToast(data.warning, 'warning');
         } else {
-          showToast('Đã hủy đơn bán hàng, hoàn trả sản phẩm vào kho và sinh Credit Note nháp', 'success');
+          showToast('Đã hủy đơn bán hàng và hoàn trả sản phẩm vào kho', 'success');
         }
         resetForm();
         fetchSO();
@@ -284,23 +289,24 @@ export const Sales: React.FC = () => {
   };
 
   const handleDeleteSO = async (id: number, code: string, state: string) => {
-    const isDoneOrSale = state === 'sale' || state === 'done';
-    const isAdmin = session?.user?.role === 'admin';
-    
+    const isConfirmed = state !== 'draft' && state !== 'cancel';
+    const isAdmin = session?.role === 'admin';
+
+    if (isConfirmed && !isAdmin) {
+      showToast('Không thể xóa đơn đã xác nhận. Vui lòng hủy đơn trước.', 'warning');
+      return;
+    }
+
     let confirmMsg = `Bạn có chắc chắn muốn xóa đơn hàng ${code}?`;
-    if (isDoneOrSale) {
-      if (!isAdmin) {
-        alert('Không thể xóa đơn đã hoàn thành/xác nhận. Vui lòng hủy đơn trước.');
-        return;
-      }
-      confirmMsg = `Đơn hàng ${code} đã xác nhận/hoàn thành. Xóa đơn này sẽ KHÔNG hoàn lại tồn kho. Bạn có chắc chắn muốn FORCE xóa?`;
+    if (isConfirmed && isAdmin) {
+      confirmMsg = `Đơn hàng ${code} đã xác nhận. FORCE xóa sẽ KHÔNG hoàn lại tồn kho. Bạn có chắc chắn?`;
     }
 
     if (!confirm(confirmMsg)) return;
 
     try {
       showToast('Đang xóa đơn hàng...', 'info');
-      const url = `/api/odoo/so/${id}${isDoneOrSale && isAdmin ? '?force=true' : ''}`;
+      const url = `/api/odoo/so/${id}${isConfirmed && isAdmin ? '?force=true' : ''}`;
       const res = await fetch(url, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
@@ -351,7 +357,24 @@ export const Sales: React.FC = () => {
     }
   };
 
-  // Check locked state (locked if not in draft state)
+  /**
+   * ✅ Logic 2 trạng thái đơn giản: Nháp & Xác nhận
+   * Dựa vào picking state (fallback) hoặc SO state
+   */
+  const getSOStatusLabel = (so: any): { label: string; className: string } => {
+    const state = so.state || so.delivery_state || '';
+
+    if (state === 'cancel') {
+      return { label: '❌ Đã hủy', className: 'text-muted' };
+    }
+    if (state === 'draft') {
+      return { label: '📝 Nháp', className: 'text-warning' };
+    }
+    // Tất cả các state còn lại → Đã xác nhận
+    return { label: '✅ Đã xác nhận', className: 'text-success' };
+  };
+
+  // Check locked state
   const matchingOrder = cache.so?.find(o => o.id === currentSOId);
   const isLocked = currentSOId ? matchingOrder?.state !== 'draft' : false;
   const orderState = matchingOrder?.state;
@@ -363,7 +386,7 @@ export const Sales: React.FC = () => {
     <div className="tab-panel active" id="panelSales">
       <div className="glass-panel settings-container" style={{ marginBottom: '24px' }}>
         <h2>Nhập Thông Tin Bán Hàng (Tạo Đơn Bán Hàng SO)</h2>
-        <p className="text-muted">Bộ phận kinh doanh: Nhập đơn đặt hàng của khách hàng. Hệ thống tự động tạo báo giá, xác nhận giao hàng và tạo hóa đơn nháp tương ứng.</p>
+        <p className="text-muted">Bộ phận kinh doanh: Nhập đơn đặt hàng của khách hàng. Hệ thống tự động tạo đơn, xuất kho và in hóa đơn.</p>
 
         <form onSubmit={(e) => e.preventDefault()} className="settings-form">
           <div className="form-grid" style={{ gridTemplateColumns: '1fr 1.5fr 1.2fr', gap: '12px', marginBottom: '12px' }}>
@@ -502,7 +525,7 @@ export const Sales: React.FC = () => {
                 {currentSOLines.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="text-center text-muted" style={{ padding: '12px' }}>
-                      Chưa có dòng nào được thêm. Vui lòng chọn sản phẩm ở trên rồi nhấn "Thêm Dòng".
+                      Chưa có dòng nào được thêm. Vui lòng chọn sản phẩm ở trên rồi nhấn "Thêm".
                     </td>
                   </tr>
                 ) : (
@@ -600,7 +623,7 @@ export const Sales: React.FC = () => {
                   Đơn Hàng Mới
                 </Button>
               )}
-              {currentSOId && (orderState === 'sale' || orderState === 'done') && (
+              {currentSOId && orderState && orderState !== 'draft' && orderState !== 'cancel' && (
                 <Button
                   variant="secondary"
                   disabled={isCanceling}
@@ -656,11 +679,10 @@ export const Sales: React.FC = () => {
               onChange={(e) => setFilterState(e.target.value)}
               style={{ flex: '1 1 150px', height: '36px', padding: '0 8px', fontSize: '0.9rem' }}
             >
-              <option value="all">-- Tất cả trạng thái --</option>
-              <option value="draft">Nháp (Draft)</option>
-              <option value="sale">Đã xác nhận (Sale)</option>
-              <option value="done">Hoàn thành (Done)</option>
-              <option value="cancel">Đã hủy (Cancel)</option>
+              <option value="all">-- Tất cả --</option>
+              <option value="draft">📝 Nháp</option>
+              <option value="confirmed">✅ Đã xác nhận</option>
+              <option value="cancel">❌ Đã hủy</option>
             </select>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
               <span className="text-muted" style={{ fontSize: '0.85rem' }}>Từ:</span>
@@ -705,7 +727,7 @@ export const Sales: React.FC = () => {
                 <th>Ngày đặt</th>
                 <th>Khách hàng</th>
                 <th>Tổng tiền đơn hàng</th>
-                <th>Trạng thái Odoo</th>
+                <th>Trạng thái</th>
                 <th>Hóa đơn liên kết</th>
                 <th style={{ textAlign: 'center' }}>Thao tác</th>
               </tr>
@@ -716,10 +738,17 @@ export const Sales: React.FC = () => {
                   const nameMatch = (o.name || '').toLowerCase().includes(filterSearch.toLowerCase());
                   const partnerMatch = (o.partner || '').toLowerCase().includes(filterSearch.toLowerCase());
                   const searchOk = nameMatch || partnerMatch;
-                  
+
+                  // ✅ Logic filter 2 trạng thái
                   let stateOk = true;
                   if (filterState !== 'all') {
-                    stateOk = o.state === filterState;
+                    const soState = o.state || '';
+                    if (filterState === 'confirmed') {
+                      // "Đã xác nhận" = không phải draft và không phải cancel
+                      stateOk = soState !== 'draft' && soState !== 'cancel';
+                    } else {
+                      stateOk = soState === filterState;
+                    }
                   }
 
                   let dateOk = true;
@@ -775,38 +804,15 @@ export const Sales: React.FC = () => {
 
                 return filteredSO.map((o) => {
                   const total = o.amount_total ? Number(o.amount_total).toLocaleString() + ' đ' : '0 đ';
-                  let stateLabel = '';
-                  let badgeClass = 'text-warning';
 
-                  if (o.state === 'draft') {
-                    stateLabel = 'Nháp (Draft)';
-                    badgeClass = 'text-warning';
-                  } else if (o.state === 'cancel') {
-                    stateLabel = 'Đã hủy';
-                    badgeClass = 'text-muted';
-                  } else if (o.state === 'sale' || o.state === 'done') {
-                    if (o.delivery_state === 'done') {
-                      stateLabel = 'Hoàn thành (Done)';
-                      badgeClass = 'text-success';
-                    } else if (o.delivery_state === 'assigned') {
-                      stateLabel = 'Sẵn sàng giao (Ready)';
-                      badgeClass = 'text-info';
-                    } else if (o.delivery_state === 'confirmed' || o.delivery_state === 'waiting') {
-                      stateLabel = 'Chờ sản xuất (Waiting)';
-                      badgeClass = 'text-accent';
-                    } else {
-                      stateLabel = 'Đơn bán hàng';
-                      badgeClass = 'text-success';
-                    }
-                  } else {
-                    stateLabel = o.state || 'N/A';
-                  }
+                  // ✅ Dùng hàm mới: 2 trạng thái
+                  const status = getSOStatusLabel(o);
 
                   return (
                     <tr
                       key={o.id}
-                      onClick={() => handleOpenSO(o.id)}
                       style={{ cursor: 'pointer' }}
+                      onClick={() => handleOpenSO(o.id)}
                     >
                       <td>
                         <strong style={{ color: 'var(--primary-color)' }}>
@@ -818,12 +824,12 @@ export const Sales: React.FC = () => {
                       </td>
                       <td>
                         {(() => {
-                          const partner = o.partner 
+                          const partner = o.partner
                             ? { name: o.partner, phone: o.partner_phone }
                             : cache.customers.find(c => c.id === o.partner_id);
-                          
+
                           if (!partner) return <span className="text-muted">N/A</span>;
-                          
+
                           return (
                             <div title={partner.phone || ''}>
                               <strong>{partner.name}</strong>
@@ -833,7 +839,7 @@ export const Sales: React.FC = () => {
                         })()}
                       </td>
                       <td><strong>{total}</strong></td>
-                      <td><span className={`badge ${badgeClass}`}>{stateLabel}</span></td>
+                      <td><span className={`badge ${status.className}`}>{status.label}</span></td>
                       <td onClick={(e) => e.stopPropagation()}>
                         {o.invoice_ids && o.invoice_ids.length > 0 ? (
                           o.invoice_ids.map((invoiceId: number) => (
@@ -856,27 +862,30 @@ export const Sales: React.FC = () => {
                             className="pdf-link btn-create-invoice-pdf"
                             style={{ color: 'var(--accent-secondary)', textDecoration: 'underline', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                           >
-                            ➕ Tạo & Tải PDF
+                            ➕ Tải PDF
                           </a>
                         )}
                       </td>
                       <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-                        <Button
-                          size="sm"
-                          variant="danger"
-                          onClick={() => handleDeleteSO(o.id, o.name || `SO-${o.id}`, o.state)}
-                          style={{
-                            margin: 0,
-                            padding: '2px 6px',
-                            fontSize: '0.75rem',
-                            minHeight: 'unset',
-                            color: 'var(--accent-danger)',
-                            background: 'rgba(239, 68, 68, 0.1)',
-                            borderColor: 'rgba(239, 68, 68, 0.2)'
-                          }}
-                        >
-                          Xóa
-                        </Button>
+                        {/* Nút xóa - chỉ hiện khi là nháp */}
+                        {o.state === 'draft' && (
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            onClick={() => handleDeleteSO(o.id, o.name || `SO-${o.id}`, o.state)}
+                            style={{
+                              margin: 0,
+                              padding: '4px 10px',
+                              fontSize: '0.75rem',
+                              minHeight: 'unset',
+                              color: 'var(--accent-danger)',
+                              background: 'rgba(239, 68, 68, 0.1)',
+                              borderColor: 'rgba(239, 68, 68, 0.2)'
+                            }}
+                          >
+                            🗑️ Xóa
+                          </Button>
+                        )}
                       </td>
                     </tr>
                   );

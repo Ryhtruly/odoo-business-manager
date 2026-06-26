@@ -20,6 +20,8 @@
     "@radix-ui/react-dialog": "^1.1.16",
     "acorn": "^8.17.0",
     "axios": "^1.17.0",
+    "chart.js": "^4.5.1",
+    "chartjs-plugin-datalabels": "^2.2.0",
     "clsx": "^2.1.1",
     "concurrently": "^8.2.2",
     "cors": "^2.8.5",

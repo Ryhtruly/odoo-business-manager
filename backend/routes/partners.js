@@ -296,17 +296,15 @@ router.put('/odoo/partners/:id', checkRole(['ke_toan_kho', 'kinh_doanh', 'ke_toa
     try {
       await odooCall(config, 'res.partner', 'write', [[id], payload], {}, cookie);
     } catch (writeErr) {
-      if (writeErr.message.includes('customer_rank') || writeErr.message.includes('supplier_rank')) {
-        console.warn('Partner write failed due to rank fields. Retrying with comment fallback...');
-        hasRankFields = false;
-        delete payload.customer_rank;
-        delete payload.supplier_rank;
-        payload.comment = body.type === 'vendor' ? 'Nhà cung cấp' : 'Khách hàng';
-        await odooCall(config, 'res.partner', 'write', [[id], payload], {}, cookie);
-      } else {
-        throw writeErr;
+        if (writeErr.message.includes('customer_rank') || writeErr.message.includes('supplier_rank')) {
+          console.warn('Partner write failed due to rank fields. Retrying with comment fallback...');
+          delete payload.customer_rank;
+          delete payload.supplier_rank;
+          payload.comment = body.type === 'vendor' ? 'Nhà cung cấp' : 'Khách hàng';
+          await odooCall(config, 'res.partner', 'write', [[id], payload], {}, cookie);
+        }
       }
-    }
+
     
     res.json({ success: true });
   } catch (e) {

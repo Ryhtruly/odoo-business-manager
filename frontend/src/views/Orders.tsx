@@ -1,3 +1,4 @@
+// client/src/views/Orders.tsx
 import React, { useEffect, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import Button from '../components/common/Button';
@@ -17,14 +18,15 @@ export const Orders: React.FC = () => {
     cache,
     loading,
     showToast,
-    fetchPOs,
+    // fetchPOs, // DISABLED: Tab PO đã bỏ, dùng cho Odoo Online
     fetchReceipts,
     fetchVendors,
     fetchProducts,
     generateSKUFromName
   } = useApp();
 
-  const [activeSubTab, setActiveSubTab] = useState<'poForm' | 'poList' | 'receiptsList' | 'historyList'>('poForm');
+  // ✅ Đã bỏ 'poList' khỏi type - chỉ còn 3 tab
+  const [activeSubTab, setActiveSubTab] = useState<'poForm' | 'receiptsList' | 'historyList'>('poForm');
 
   // PO Form states
   const [poVendor, setPoVendor] = useState<string>('');
@@ -48,7 +50,8 @@ export const Orders: React.FC = () => {
 
   // History detail modal states
   const [isDetailModalOpen, setIsDetailModalOpen] = useState<boolean>(false);
-  const [detailType, setDetailType] = useState<'po' | 'receipt' | null>(null);
+  // ✅ Đã bỏ 'po' khỏi type - chỉ còn 'receipt'
+  const [detailType, setDetailType] = useState<'receipt' | null>(null);
   const [detailData, setDetailData] = useState<any>(null);
   const [isDetailLoading, setIsDetailLoading] = useState<boolean>(false);
 
@@ -62,9 +65,14 @@ export const Orders: React.FC = () => {
   const role = session?.role || '';
   const isWarehouseStaff = role === 'admin' || role === 'ke_toan_kho';
 
+  // ✅ Helper: Lấy số đơn nháp (chưa duyệt) - dùng cho badge
+  const draftReceiptsCount = cache.receipts.filter(
+    r => r.state === 'draft' || r.state === 'assigned' || r.state === 'confirmed' || r.state === 'waiting'
+  ).length;
+
   // Load baseline data
   useEffect(() => {
-    if (cache.pos.length === 0) fetchPOs();
+    // if (cache.pos.length === 0) fetchPOs(); // DISABLED
     if (cache.receipts.length === 0) fetchReceipts();
     if (cache.vendors.length === 0) fetchVendors();
     if (cache.products.length === 0) fetchProducts();
@@ -77,19 +85,21 @@ export const Orders: React.FC = () => {
 
   // Fetch vendor's past purchased products for sorting/recommending
   useEffect(() => {
+    let cancelled = false;
     if (poVendor) {
       fetch(`/api/odoo/partners/${poVendor}/purchased-products`)
         .then(res => res.ok ? res.json() : [])
         .then(data => {
-          setSuggestedProductIds(data);
+          if (!cancelled) setSuggestedProductIds(data);
         })
         .catch(err => {
           console.error(err);
-          setSuggestedProductIds([]);
+          if (!cancelled) setSuggestedProductIds([]);
         });
     } else {
       setSuggestedProductIds([]);
     }
+    return () => { cancelled = true; };
   }, [poVendor]);
 
   // Sync default price when product selection changes
@@ -181,7 +191,7 @@ export const Orders: React.FC = () => {
     fetchProducts();
   };
 
-  // Submit purchase order
+  // Submit purchase order / receipt
   const handlePOSubmit = async (isDraft: boolean) => {
     if (!poVendor) {
       showToast('Vui lòng chọn Nhà cung cấp', 'warning');
@@ -244,7 +254,7 @@ export const Orders: React.FC = () => {
         }
       }
 
-      // 2. Submit the Purchase Order
+      // 2. Submit the Receipt (PO functionality removed, dùng stock.picking trực tiếp)
       const dateOrderStr = poDate ? new Date(poDate).toISOString().replace('T', ' ').substring(0, 19) : undefined;
       const payload = {
         partner_id: Number(poVendor),
@@ -257,33 +267,36 @@ export const Orders: React.FC = () => {
         }))
       };
 
-      showToast(isDraft ? 'Đang tạo đơn mua hàng nháp...' : 'Đang tạo đơn mua hàng & nhập kho...', 'info');
+      showToast(isDraft ? 'Đang tạo phiếu nhập kho nháp...' : 'Đang nhập kho...', 'info');
       const response = await fetch('/api/odoo/purchase-orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       const data = await response.json();
+
       if (data.success) {
-        showToast(isDraft ? 'Đã tạo PO nháp thành công!' : 'Đã tạo PO, nhập kho và hóa đơn nháp thành công!', 'success');
+        showToast(
+          isDraft
+            ? 'Đã tạo phiếu nhập kho nháp! Vui lòng vào tab "Phiếu Nhận Kho" để duyệt.'
+            : 'Đã nhập kho thành công!',
+          'success'
+        );
         if (data.warning) {
           showToast(data.warning, 'warning');
         }
-        // Reset state
-        setPoVendor('');
-        setCurrentPOLines([]);
-        setDraftPOProducts([]);
+
+        // ✅ FIX: Ở lại form (không chuyển tab) - reset form sạch
+        resetPOForm();
+
         fetchProducts();
-        fetchPOs();
+        // fetchPOs(); // DISABLED
         fetchReceipts();
-        // Switch subtab
-        if (isDraft) {
-          setActiveSubTab('poList');
-        } else {
-          setActiveSubTab('historyList');
-        }
+
+        // ✅ FIX: Luôn chuyển sang tab "Phiếu Nhận Kho" để user thấy đơn vừa tạo
+        setActiveSubTab('receiptsList');
       } else {
-        showToast(`Lỗi tạo đơn mua hàng: ${data.error}`, 'danger');
+        showToast(`Lỗi tạo phiếu nhập: ${data.error}`, 'danger');
         await rollbackCreatedProducts(createdProductMap);
       }
     } catch (err: any) {
@@ -292,6 +305,25 @@ export const Orders: React.FC = () => {
     } finally {
       setIsSubmittingPO(false);
     }
+  };
+
+  // ✅ Helper: Reset form về trạng thái ban đầu
+  const resetPOForm = () => {
+    setPoVendor('');
+    setCurrentPOLines([]);
+    setDraftPOProducts([]);
+    setPoProduct('');
+    setPoQty(100);
+    setPoPrice(0);
+
+    // Reset date về hiện tại
+    const now = new Date();
+    const tzoffset = now.getTimezoneOffset() * 60000;
+    const localISOTime = new Date(now.getTime() - tzoffset).toISOString().slice(0, 16);
+    setPoDate(localISOTime);
+
+    // Reset suggested products
+    setSuggestedProductIds([]);
   };
 
   // Submit Partner Vendor form
@@ -334,31 +366,31 @@ export const Orders: React.FC = () => {
     }
   };
 
-  // Confirm Draft PO button action
-  const handleConfirmPO = async (id: number) => {
-    if (!confirm('Bạn có chắc chắn muốn xác nhận đơn mua hàng này và tiến hành nhập kho không?')) return;
-    try {
-      showToast('Đang xác nhận đơn mua hàng...', 'info');
-      const res = await fetch(`/api/odoo/purchase-orders/${id}/confirm`, {
-        method: 'POST'
-      });
-      const resData = await res.json();
-      if (resData.success) {
-        showToast('Xác nhận PO và nhập kho thành công!', 'success');
-        if (resData.warning) {
-          showToast(resData.warning, 'warning');
-        }
-        fetchPOs();
-        fetchReceipts();
-        fetchProducts();
-        setActiveSubTab('historyList');
-      } else {
-        showToast(`Lỗi: ${resData.error}`, 'danger');
-      }
-    } catch (err: any) {
-      showToast(`Lỗi kết nối: ${err.message}`, 'danger');
-    }
-  };
+  // DISABLED: Tab PO đã bỏ - không cần hàm này
+  // const handleConfirmPO = async (id: number) => {
+  //   if (!confirm('Bạn có chắc chắn muốn xác nhận đơn mua hàng này và tiến hành nhập kho không?')) return;
+  //   try {
+  //     showToast('Đang xác nhận đơn mua hàng...', 'info');
+  //     const res = await fetch(`/api/odoo/purchase-orders/${id}/confirm`, {
+  //       method: 'POST'
+  //     });
+  //     const resData = await res.json();
+  //     if (resData.success) {
+  //       showToast('Xác nhận PO và nhập kho thành công!', 'success');
+  //       if (resData.warning) {
+  //         showToast(resData.warning, 'warning');
+  //       }
+  //       fetchPOs();
+  //       fetchReceipts();
+  //       fetchProducts();
+  //       setActiveSubTab('historyList');
+  //     } else {
+  //       showToast(`Lỗi: ${resData.error}`, 'danger');
+  //     }
+  //   } catch (err: any) {
+  //     showToast(`Lỗi kết nối: ${err.message}`, 'danger');
+  //   }
+  // };
 
   // Validate incoming warehouse receipt
   const handleValidateReceipt = async (id: number) => {
@@ -372,7 +404,7 @@ export const Orders: React.FC = () => {
         showToast('Duyệt nhập kho thành công', 'success');
         fetchReceipts();
         fetchProducts();
-        setActiveSubTab('historyList');
+        // ✅ Giữ nguyên tab hiện tại (receiptsList) để user thấy kết quả
       } else {
         showToast(`Lỗi duyệt: ${data.error}`, 'danger');
       }
@@ -381,15 +413,17 @@ export const Orders: React.FC = () => {
     }
   };
 
-  // Open details viewer for completed/pending objects
-  const handleOpenDetail = async (type: 'po' | 'receipt', id: number) => {
+  // ✅ Open details viewer (chỉ dùng cho receipt, không cho PO)
+  // ✅ Sửa thành:
+  const handleOpenDetail = async (type: 'receipt', id: number) => {
     setDetailType(type);
     setIsDetailLoading(true);
     setIsDetailModalOpen(true);
     setDetailData(null);
 
     try {
-      const response = await fetch(`/api/odoo/${type === 'po' ? 'po' : 'receipts'}/${id}`);
+      const response = await fetch(`/api/odoo/receipts/${id}`);
+      // ✅ Hardcode 'receipts' vì type chỉ có 1 giá trị
       if (!response.ok) throw new Error('Không thể tải chi tiết');
       const data = await response.json();
       setDetailData(data);
@@ -400,6 +434,7 @@ export const Orders: React.FC = () => {
       setIsDetailLoading(false);
     }
   };
+
 
   // Open return Dialog
   const handleOpenReturn = (data: any) => {
@@ -478,7 +513,7 @@ export const Orders: React.FC = () => {
       const resData = await response.json();
 
       if (resData.success) {
-        showToast('Trả hàng và tạo Credit Note nháp thành công!', 'success');
+        showToast('Trả hàng thành công! Tồn kho đã được cập nhật.', 'success');
         if (resData.warning) {
           showToast(resData.warning, 'warning');
         }
@@ -495,42 +530,22 @@ export const Orders: React.FC = () => {
     }
   };
 
-  // Compile unified transactional history (POs / Receipts that are done/purchased)
+  // ✅ Compile history - chỉ từ Receipts (PO đã bỏ)
   const compileHistoryList = () => {
     let history: any[] = [];
-    if (cache.pos) {
-      history = history.concat(
-        cache.pos
-          .filter(po => po.state === 'purchase' || po.state === 'done')
-          .map(po => ({
-            id: po.id,
-            rawType: 'po',
-            type: 'Đơn Mua Hàng',
-            ref: po.po_number || '-',
-            partner: po.vendor || 'N/A',
-            detail: po.amount_total ? Number(po.amount_total).toLocaleString() + ' đ' : '0 đ',
-            date: po.write_date
-              ? new Date(po.write_date).toLocaleString('vi-VN')
-              : po.date_order ? new Date(po.date_order).toLocaleString('vi-VN') : 'N/A',
-            timestamp: po.write_date ? new Date(po.write_date).getTime() : 0
-          }))
-      );
-    }
     if (cache.receipts) {
-      history = history.concat(
-        cache.receipts
-          .filter(r => r.state === 'done')
-          .map(r => ({
-            id: r.id,
-            rawType: 'receipt',
-            type: 'Phiếu Nhận Kho',
-            ref: r.receipt_number || '-',
-            partner: r.vendor || 'N/A',
-            detail: r.origin || '-',
-            date: r.write_date ? new Date(r.write_date).toLocaleString('vi-VN') : 'N/A',
-            timestamp: r.write_date ? new Date(r.write_date).getTime() : 0
-          }))
-      );
+      history = cache.receipts
+        .filter(r => r.state === 'done')
+        .map(r => ({
+          id: r.id,
+          rawType: 'receipt',
+          type: 'Phiếu Nhận Kho',
+          ref: r.receipt_number || '-',
+          partner: r.vendor || 'N/A',
+          detail: r.origin || '-',
+          date: r.write_date ? new Date(r.write_date).toLocaleString('vi-VN') : 'N/A',
+          timestamp: r.write_date ? new Date(r.write_date).getTime() : 0
+        }));
     }
     return history.sort((a, b) => b.timestamp - a.timestamp);
   };
@@ -569,9 +584,8 @@ export const Orders: React.FC = () => {
     };
 
     setDraftPOProducts(prev => [tempProduct, ...prev]);
-    // Automatically add it to the select and select it
     setPoProduct(tempId);
-    showToast(`Đã tạo tạm nguyên liệu "${name}". Bấm "Thêm Dòng" để đưa vào đơn hàng.`, 'info');
+    showToast(`Đã tạo tạm nguyên liệu "${name}". Bấm "Thêm" để đưa vào phiếu.`, 'info');
   };
 
   const currentPoTotal = currentPOLines.reduce((acc, curr) => acc + (curr.product_qty * curr.price_unit), 0);
@@ -580,7 +594,7 @@ export const Orders: React.FC = () => {
 
   return (
     <div className="tab-panel active" id="panelOrders">
-      {/* Sub-tabs navigation bar */}
+      {/* ✅ Sub-tabs navigation bar - chỉ còn 3 tab */}
       <div
         className="sub-tabs-container"
         style={{ display: 'flex', gap: '12px', marginBottom: '24px', borderBottom: '1px solid var(--panel-border)', paddingBottom: '12px' }}
@@ -602,23 +616,8 @@ export const Orders: React.FC = () => {
         >
           Nhập Nguyên Liệu Đầu Vào
         </button>
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('poList')}
-          className={`sub-tab ${activeSubTab === 'poList' ? 'active' : ''}`}
-          style={{
-            background: 'none',
-            border: 'none',
-            padding: '8px 16px',
-            fontWeight: activeSubTab === 'poList' ? 600 : 500,
-            cursor: 'pointer',
-            color: activeSubTab === 'poList' ? 'var(--accent-primary)' : 'var(--text-muted)',
-            borderBottom: activeSubTab === 'poList' ? '2px solid var(--accent-primary)' : '2px solid transparent',
-            transition: 'all 0.3s'
-          }}
-        >
-          Đơn Mua Hàng (POs)
-        </button>
+
+        {/* ✅ Tab Phiếu Nhận Kho - có badge số đơn chờ duyệt */}
         <button
           type="button"
           onClick={() => setActiveSubTab('receiptsList')}
@@ -631,11 +630,29 @@ export const Orders: React.FC = () => {
             cursor: 'pointer',
             color: activeSubTab === 'receiptsList' ? 'var(--accent-primary)' : 'var(--text-muted)',
             borderBottom: activeSubTab === 'receiptsList' ? '2px solid var(--accent-primary)' : '2px solid transparent',
-            transition: 'all 0.3s'
+            transition: 'all 0.3s',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
           }}
         >
-          Phiếu Nhận Kho (Incoming Receipts)
+          Phiếu Nhận Kho
+          {draftReceiptsCount > 0 && (
+            <span style={{
+              background: 'var(--accent-primary)',
+              color: 'white',
+              borderRadius: '10px',
+              padding: '2px 8px',
+              fontSize: '0.7rem',
+              fontWeight: 'bold',
+              minWidth: '20px',
+              textAlign: 'center'
+            }}>
+              {draftReceiptsCount}
+            </span>
+          )}
         </button>
+
         <button
           type="button"
           onClick={() => setActiveSubTab('historyList')}
@@ -655,12 +672,12 @@ export const Orders: React.FC = () => {
         </button>
       </div>
 
-      {/* 1. PO Input Form Subtab */}
+      {/* 1. PO Input Form Subtab - đổi tên thành Phiếu Nhập Kho */}
       {activeSubTab === 'poForm' && (
         <div className="sub-tab-panel active" id="subPanelPoForm">
           <div className="glass-panel settings-container" style={{ marginBottom: '24px' }}>
-            <h2>Nhập Nguyên Liệu Đầu Vào (Tạo Đơn Mua Hàng PO)</h2>
-            <p className="text-muted">Bộ phận kế toán kho: Tạo đơn mua nguyên vật liệu từ nhà cung cấp để chuẩn bị nhập kho.</p>
+            <h2>Nhập Nguyên Liệu Đầu Vào (Tạo Phiếu Nhập Kho)</h2>
+            <p className="text-muted">Bộ phận kế toán kho: Tạo phiếu nhập kho nguyên vật liệu từ nhà cung cấp.</p>
 
             <form
               onSubmit={(e) => {
@@ -719,7 +736,7 @@ export const Orders: React.FC = () => {
                 style={{ padding: '12px', marginBottom: '12px', border: '1px dashed rgba(0, 0, 0, 0.1)', background: 'rgba(0, 0, 0, 0.02)', borderRadius: '8px' }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 600 }}>Thêm Sản Phẩm Đặt Mua</h4>
+                  <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 600 }}>Thêm Sản Phẩm Nhập Kho</h4>
                   {poVendor && (
                     <button
                       type="button"
@@ -813,7 +830,7 @@ export const Orders: React.FC = () => {
                     {currentPOLines.length === 0 ? (
                       <tr>
                         <td colSpan={5} className="text-center text-muted" style={{ padding: '12px', textAlign: 'center' }}>
-                          Chưa có dòng nào được thêm. Vui lòng chọn sản phẩm ở trên rồi nhấn "Thêm Dòng".
+                          Chưa có dòng nào được thêm. Vui lòng chọn sản phẩm ở trên rồi nhấn "Thêm".
                         </td>
                       </tr>
                     ) : (
@@ -858,7 +875,7 @@ export const Orders: React.FC = () => {
 
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '12px', marginTop: '16px', width: '100%' }}>
                 <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--accent-danger)' }}>
-                  Tổng cộng đơn mua:{' '}
+                  Tổng giá trị phiếu nhập:{' '}
                   <span style={{ fontSize: '22px', fontWeight: 800, color: 'var(--accent-danger)' }}>
                     {currentPoTotal.toLocaleString()} đ
                   </span>
@@ -871,7 +888,7 @@ export const Orders: React.FC = () => {
                     onClick={() => handlePOSubmit(true)}
                     style={{ margin: 0, padding: '10px 24px', fontSize: '1rem' }}
                   >
-                    Lưu Nháp (Draft PO)
+                    Lưu Phiếu Nháp
                   </Button>
                   <Button
                     type="submit"
@@ -879,118 +896,32 @@ export const Orders: React.FC = () => {
                     disabled={isSubmittingPO}
                     style={{ margin: 0, padding: '10px 24px', fontSize: '1rem' }}
                   >
-                    {isSubmittingPO ? 'Đang xử lý...' : 'Xác Nhận & Nhập Kho'}
+                    {isSubmittingPO ? 'Đang xử lý...' : 'Duyệt Nhập Kho'}
                   </Button>
                 </div>
               </div>
             </form>
-            <div style={{ fontWeight: 600, opacity: 0.8, fontSize: '0.95rem', marginBottom: '6px', color: '#333' }}>
-                💡 Hướng dẫn quy trình:
-              </div>
-              <div style={{ opacity: 0.6, fontSize: '0.85rem', lineHeight: '1.6', color: '#555' }}>
-                Bấm <strong>Lưu Nháp (Draft PO)</strong> để lưu đơn tạm — chưa vào sổ, có thể sửa hoặc xóa.
-                <br />
-                Sau khi bấm <strong>Xác Nhận & Nhập Kho</strong>, đơn sẽ được gửi lên Odoo, tạo số PO thực tế, vào kho ngay lập tức và không thể xóa thủ công (chỉ có thể tạo phiếu trả hàng).
-              </div>
-          </div>
-        </div>
-      )}
 
-      {/* 2. POs List Subtab */}
-      {activeSubTab === 'poList' && (
-        <div className="sub-tab-panel">
-          <div className="glass-panel datatable-container">
-            <div className="table-header">
-              <h2>Danh Sách Đơn Mua Hàng (Purchase Orders)</h2>
-              <Button variant="secondary" onClick={fetchPOs}>Tải Lại</Button>
+            <div style={{ fontWeight: 600, opacity: 0.8, fontSize: '0.95rem', marginBottom: '6px', color: '#333', marginTop: '20px' }}>
+              💡 Hướng dẫn quy trình:
             </div>
-            <div className="responsive-table-wrapper">
-              <table>
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: 'left', paddingLeft: '16px' }}>Mã PO</th>
-                    <th style={{ textAlign: 'left', paddingLeft: '16px' }}>Nhà cung cấp</th>
-                    <th style={{ textAlign: 'right' }}>Tổng tiền</th>
-                    <th style={{ textAlign: 'center' }}>Trạng thái</th>
-                    <th style={{ textAlign: 'center' }}>Ngày mua</th>
-                    <th style={{ textAlign: 'right', paddingRight: '15px' }}>Hành động</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(loading.pos && cache.pos.length === 0) ? (
-                    <tr>
-                      <td colSpan={6} className="text-center">Đang tải đơn mua hàng...</td>
-                    </tr>
-                  ) : cache.pos.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="text-center">Không tìm thấy đơn mua hàng nào.</td>
-                    </tr>
-                  ) : (
-                    cache.pos.map((o) => {
-                      const total = o.amount_total ? Number(o.amount_total).toLocaleString() + ' đ' : '0 đ';
-                      const poDate = o.date_order ? new Date(o.date_order).toLocaleDateString('vi-VN') : 'N/A';
-
-                      let stateLabel = o.state || 'N/A';
-                      let stateClass = 'text-warning';
-
-                      if (o.state === 'draft' || o.state === 'sent' || o.state === 'to approve') {
-                        stateLabel = 'Bản nháp';
-                        stateClass = 'text-muted';
-                      } else if (o.state === 'purchase') {
-                        stateLabel = 'Chờ nhập hàng';
-                        stateClass = 'text-warning';
-                      } else if (o.state === 'done') {
-                        stateLabel = 'Đã hoàn tất';
-                        stateClass = 'text-success';
-                      } else if (o.state === 'cancel') {
-                        stateLabel = 'Đã hủy';
-                        stateClass = 'text-danger';
-                      }
-
-                      return (
-                        <tr key={o.id}>
-                          <td style={{ textAlign: 'left', paddingLeft: '16px' }}><strong>{o.po_number || '-'}</strong></td>
-                          <td style={{ textAlign: 'left', paddingLeft: '16px' }}>{o.vendor || 'N/A'}</td>
-                          <td style={{ textAlign: 'right', fontWeight: 600 }}>{total}</td>
-                          <td style={{ textAlign: 'center' }}><span className={stateClass}>{stateLabel}</span></td>
-                          <td style={{ textAlign: 'center' }}>{poDate}</td>
-                          <td style={{ textAlign: 'right', paddingRight: '15px', whiteSpace: 'nowrap' }}>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              onClick={() => handleOpenDetail('po', o.id)}
-                              style={{ padding: '4px 8px', fontSize: '0.75rem', margin: '0 4px 0 0', minHeight: 'unset', lineHeight: 1 }}
-                            >
-                              Chi tiết
-                            </Button>
-                            {(o.state === 'draft' || o.state === 'sent' || o.state === 'to approve') && (
-                              <Button
-                                size="sm"
-                                variant="primary"
-                                onClick={() => handleConfirmPO(o.id)}
-                                style={{ padding: '4px 8px', fontSize: '0.75rem', margin: 0, minHeight: 'unset', lineHeight: 1, background: '#2ecc71', borderColor: '#27ae60' }}
-                              >
-                                Xác nhận
-                              </Button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+            <div style={{ opacity: 0.6, fontSize: '0.85rem', lineHeight: '1.6', color: '#555' }}>
+              Bấm <strong>Lưu Phiếu Nháp</strong> để tạo phiếu nhập ở trạng thái chờ — chưa cập nhật tồn kho, có thể duyệt sau trong tab "Phiếu Nhận Kho".
+              <br />
+              Bấm <strong>Duyệt Nhập Kho</strong> để nhập kho ngay lập tức — tồn kho sẽ được cập nhật ngay. Sau khi duyệt, có thể tạo phiếu trả hàng nếu cần.
             </div>
           </div>
         </div>
       )}
 
-      {/* 3. Incoming Receipts Subtab */}
+      {/* ❌ ĐÃ XÓA: Tab "Đơn Mua Hàng (POs)" - không dùng cho Odoo Online */}
+
+      {/* 2. Incoming Receipts Subtab - ✅ Giữ nguyên */}
       {activeSubTab === 'receiptsList' && (
         <div className="sub-tab-panel">
           <div className="glass-panel datatable-container">
             <div className="table-header">
-              <h2>Phiếu Nhận Kho Chờ Nhập (Incoming Receipts)</h2>
+              <h2>Phiếu Nhận Kho (Incoming Receipts)</h2>
               <Button variant="secondary" onClick={fetchReceipts}>Tải Lại</Button>
             </div>
             <div className="responsive-table-wrapper">
@@ -1069,22 +1000,21 @@ export const Orders: React.FC = () => {
         </div>
       )}
 
-      {/* 4. Unified transactional history Subtab */}
+      {/* 3. Unified transactional history Subtab - ✅ Giữ nguyên (chỉ từ Receipts) */}
       {activeSubTab === 'historyList' && (
         <div className="sub-tab-panel">
           <div className="glass-panel datatable-container">
             <div className="table-header">
-              <h2>Lịch Sử Đơn Mua Hàng & Phiếu Nhận Kho</h2>
-              <Button variant="secondary" onClick={() => { fetchPOs(); fetchReceipts(); }}>Tải Lại</Button>
+              <h2>Lịch Sử Phiếu Nhận Kho Đã Hoàn Tất</h2>
+              <Button variant="secondary" onClick={() => { fetchReceipts(); }}>Tải Lại</Button>
             </div>
             <div className="responsive-table-wrapper">
               <table>
                 <thead>
                   <tr>
-                    <th>Loại</th>
-                    <th>Mã tham chiếu</th>
+                    <th>Mã phiếu</th>
                     <th>Đối tác</th>
-                    <th>Chi tiết</th>
+                    <th>Tham chiếu</th>
                     <th>Ngày cập nhật</th>
                     <th>Hành động</th>
                   </tr>
@@ -1092,16 +1022,11 @@ export const Orders: React.FC = () => {
                 <tbody>
                   {historyList.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="text-center">Chưa có lịch sử giao dịch hoàn tất.</td>
+                      <td colSpan={5} className="text-center">Chưa có lịch sử giao dịch hoàn tất.</td>
                     </tr>
                   ) : (
                     historyList.map((item, index) => (
                       <tr key={index}>
-                        <td>
-                          <span className={`badge ${item.rawType === 'po' ? 'text-primary' : 'text-success'}`}>
-                            {item.type}
-                          </span>
-                        </td>
                         <td><strong>{item.ref}</strong></td>
                         <td>{item.partner}</td>
                         <td>{item.detail}</td>
@@ -1110,7 +1035,7 @@ export const Orders: React.FC = () => {
                           <Button
                             size="sm"
                             variant="secondary"
-                            onClick={() => handleOpenDetail(item.rawType, item.id)}
+                            onClick={() => handleOpenDetail('receipt', item.id)}
                             style={{ margin: 0, padding: '4px 8px', fontSize: '0.75rem', minHeight: 'unset' }}
                           >
                             Xem chi tiết
@@ -1126,7 +1051,7 @@ export const Orders: React.FC = () => {
         </div>
       )}
 
-      {/* Vendor Create Modal */}
+      {/* Vendor Create Modal - ✅ Giữ nguyên */}
       <Modal
         isOpen={isVendorModalOpen}
         onClose={() => setIsVendorModalOpen(false)}
@@ -1182,11 +1107,11 @@ export const Orders: React.FC = () => {
         </form>
       </Modal>
 
-      {/* History Detail Modal */}
+      {/* ✅ History Detail Modal - chỉ dùng cho receipt */}
       <Modal
         isOpen={isDetailModalOpen}
         onClose={() => setIsDetailModalOpen(false)}
-        title={detailType === 'po' ? 'Chi Tiết Đơn Mua Hàng' : 'Chi Tiết Phiếu Nhận Kho'}
+        title="Chi Tiết Phiếu Nhận Kho"
         maxWidth="800px"
       >
         {isDetailLoading ? (
@@ -1194,42 +1119,23 @@ export const Orders: React.FC = () => {
         ) : detailData ? (
           <div className="dialog-content">
             <div id="historyDetailInfo" style={{ marginBottom: '16px', fontSize: '0.95rem', lineHeight: '1.6' }}>
-              {detailType === 'po' ? (
-                <>
-                  <strong>Mã:</strong> {detailData.po.name} <br />
-                  <strong>Nhà cung cấp:</strong> {detailData.po.partner_id ? detailData.po.partner_id[1] : 'N/A'} <br />
-                  <strong>Tổng tiền:</strong> {Number(detailData.po.amount_total).toLocaleString()} đ
-                </>
-              ) : (
-                <>
-                  <strong>Mã phiếu:</strong> {detailData.receipt.name} <br />
-                  <strong>Tham chiếu:</strong> {detailData.receipt.origin || 'N/A'} <br />
-                  <strong>Đối tác:</strong> {detailData.receipt.partner_id ? detailData.receipt.partner_id[1] : 'N/A'} <br />
-                  <strong>Trạng thái:</strong> {detailData.receipt.state === 'done' ? (
-                    <span className="text-success" style={{ fontWeight: 600 }}>Đã hoàn tất (DONE)</span>
-                  ) : detailData.receipt.state}
-                </>
-              )}
+              <strong>Mã phiếu:</strong> {detailData.receipt.name} <br />
+              <strong>Tham chiếu:</strong> {detailData.receipt.origin || 'N/A'} <br />
+              <strong>Đối tác:</strong> {detailData.receipt.partner_id ? detailData.receipt.partner_id[1] : 'N/A'} <br />
+              <strong>Trạng thái:</strong> {detailData.receipt.state === 'done' ? (
+                <span className="text-success" style={{ fontWeight: 600 }}>Đã hoàn tất (DONE)</span>
+              ) : detailData.receipt.state}
             </div>
 
             <div className="responsive-table-wrapper" style={{ maxHeight: '400px', overflowY: 'auto' }}>
               <table>
                 <thead>
-                  {detailType === 'po' ? (
-                    <tr>
-                      <th>Sản Phẩm</th>
-                      <th>Số Lượng</th>
-                      <th>Đơn Giá</th>
-                      <th>Thành Tiền</th>
-                    </tr>
-                  ) : (
-                    <tr>
-                      <th>Sản Phẩm</th>
-                      <th>Yêu Cầu (Demand)</th>
-                      <th>Đã Nhận (Done)</th>
-                      <th>Trạng thái</th>
-                    </tr>
-                  )}
+                  <tr>
+                    <th>Sản Phẩm</th>
+                    <th>Yêu Cầu (Demand)</th>
+                    <th>Đã Nhận (Done)</th>
+                    <th>Trạng thái</th>
+                  </tr>
                 </thead>
                 <tbody>
                   {!detailData.lines || detailData.lines.length === 0 ? (
@@ -1238,33 +1144,22 @@ export const Orders: React.FC = () => {
                     </tr>
                   ) : (
                     detailData.lines.map((l: any, idx: number) => {
-                      if (detailType === 'po') {
-                        return (
-                          <tr key={idx}>
-                            <td>{l.product_id ? l.product_id[1] : l.name}</td>
-                            <td>{l.product_qty}</td>
-                            <td>{Number(l.price_unit).toLocaleString()} đ</td>
-                            <td><strong>{Number(l.price_subtotal).toLocaleString()} đ</strong></td>
-                          </tr>
-                        );
-                      } else {
-                        let stateTxt = l.state;
-                        if (l.state === 'draft') stateTxt = 'Nháp';
-                        else if (l.state === 'waiting') stateTxt = 'Chờ dòng khác';
-                        else if (l.state === 'confirmed') stateTxt = 'Chờ nhập';
-                        else if (l.state === 'assigned') stateTxt = 'Khả dụng';
-                        else if (l.state === 'done') stateTxt = 'Đã nhận';
-                        else if (l.state === 'cancel') stateTxt = 'Hủy';
+                      let stateTxt = l.state;
+                      if (l.state === 'draft') stateTxt = 'Nháp';
+                      else if (l.state === 'waiting') stateTxt = 'Chờ dòng khác';
+                      else if (l.state === 'confirmed') stateTxt = 'Chờ nhập';
+                      else if (l.state === 'assigned') stateTxt = 'Khả dụng';
+                      else if (l.state === 'done') stateTxt = 'Đã nhận';
+                      else if (l.state === 'cancel') stateTxt = 'Hủy';
 
-                        return (
-                          <tr key={idx}>
-                            <td>{l.product_id ? l.product_id[1] : l.name}</td>
-                            <td>{l.product_uom_qty}</td>
-                            <td><strong>{l.quantity_done || 0}</strong></td>
-                            <td>{stateTxt || '-'}</td>
-                          </tr>
-                        );
-                      }
+                      return (
+                        <tr key={idx}>
+                          <td>{l.product_id ? l.product_id[1] : l.name}</td>
+                          <td>{l.product_uom_qty}</td>
+                          <td><strong>{l.quantity_done || 0}</strong></td>
+                          <td>{stateTxt || '-'}</td>
+                        </tr>
+                      );
                     })
                   )}
                 </tbody>
@@ -1272,7 +1167,7 @@ export const Orders: React.FC = () => {
             </div>
 
             <div className="dialog-buttons" style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-              {detailType === 'receipt' && detailData.receipt.state === 'done' && (
+              {detailData.receipt.state === 'done' && (
                 <Button
                   variant="danger"
                   onClick={() => handleOpenReturn(detailData)}
@@ -1281,30 +1176,26 @@ export const Orders: React.FC = () => {
                   Trả Hàng (Return)
                 </Button>
               )}
-              {detailType === 'receipt' && (
-                <>
-                  <a
-                    href={`/api/odoo/receipts/${detailData.receipt.id}/pdf?access_token=${encodeURIComponent(session?.token || '')}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ textDecoration: 'none' }}
-                  >
-                    <Button variant="primary">
-                      Tải Phiếu Nhập Kho (PDF)
-                    </Button>
-                  </a>
-                  <a
-                    href={`/api/odoo/receipts/${detailData.receipt.id}/invoice-pdf?access_token=${encodeURIComponent(session?.token || '')}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ textDecoration: 'none' }}
-                  >
-                    <Button variant="secondary">
-                      Tải Hóa Đơn Mua Hàng (PDF)
-                    </Button>
-                  </a>
-                </>
-              )}
+              <a
+                href={`/api/odoo/receipts/${detailData.receipt.id}/pdf?access_token=${encodeURIComponent(session?.token || '')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ textDecoration: 'none' }}
+              >
+                <Button variant="primary">
+                  Tải Phiếu Nhập Kho (PDF)
+                </Button>
+              </a>
+              <a
+                href={`/api/odoo/receipts/${detailData.receipt.id}/invoice-pdf?access_token=${encodeURIComponent(session?.token || '')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ textDecoration: 'none' }}
+              >
+                <Button variant="secondary">
+                  Tải Hóa Đơn Mua Hàng (PDF)
+                </Button>
+              </a>
               <Button variant="secondary" onClick={() => setIsDetailModalOpen(false)}>
                 Đóng
               </Button>
@@ -1313,7 +1204,7 @@ export const Orders: React.FC = () => {
         ) : null}
       </Modal>
 
-      {/* Return dialog */}
+      {/* Return dialog - ✅ Giữ nguyên */}
       <Modal
         isOpen={isReturnModalOpen}
         onClose={() => setIsReturnModalOpen(false)}
